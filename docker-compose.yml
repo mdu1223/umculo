@@ -1,0 +1,36 @@
+# Umculo — example setup. Copy this file, change the folders on the left of each ":" to yours, then:
+#   docker compose up -d
+# and open http://<your-server>:8095 to create your admin account.
+services:
+  umculo:
+    image: ghcr.io/mdu1223/umculo:latest
+    container_name: umculo
+    restart: unless-stopped
+    ports:
+      - "8095:8095"
+    environment:
+      - TZ=Africa/Johannesburg
+      # Where your music lives inside the container (the defaults match the volumes below)
+      - MUSIC_DIR=/data/Music
+      - LIBRARY_DIR=/data/Music/Umculo
+      # Optional: your public address (https://music.example.com), used for artist pictures in apps
+      - PUBLIC_URL=
+      # Optional download sources. Leave them out and Umculo still plays and organises your own music.
+      # Soulseek through slskd:
+      # - SLSKD_URL=http://slskd:5030
+      # - SLSKD_KEY=your-slskd-api-key
+      # - SLSKD_DOWNLOADS=/data/Music/Soulseek
+      # Usenet through Prowlarr + SABnzbd:
+      # - PROWLARR_URL=http://prowlarr:9696
+      # - PROWLARR_KEY=your-prowlarr-api-key
+      # - SABNZBD_URL=http://sabnzbd:8080
+      # - SABNZBD_KEY=your-sabnzbd-api-key
+      # Phone notifications (ntfy):
+      # - NTFY_URL=https://ntfy.sh/your-private-topic
+    volumes:
+      - ./umculo-config:/config          # accounts, settings, the library database
+      - /path/to/your/media:/data        # your music folder must be at /data/Music inside
+      - ./umculo-backups:/backup         # nightly backups of /config
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
