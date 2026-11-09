@@ -88,7 +88,7 @@ Use a VPN (Tailscale/WireGuard) or a tunnel (for example Cloudflare Tunnel). Nev
 The tests use made-up sample music and pretend versions of every outside service:
 
 ```bash
-pip install mutagen segno shazamio && sudo apt install ffmpeg
+pip install mutagen segno shazamio py-opensonic && sudo apt install ffmpeg
 bash test/run_api_tests.sh
 ```
 
