@@ -11,7 +11,9 @@
 ## What it does
 
 - **A music server for your apps.** Built-in Subsonic / OpenSubsonic API, so Subsonic apps like Arpeggi and Amperfy work with it. (A Jellyfin-style API is there too, still experimental.)
-- **A web player** that works on phones and computers: search, library, queue, lyrics, instant mixes, a yearly "your listening" recap, light and dark mode.
+- **A web player** that works on phones and computers: search, library (artists, playlists and DJ mixes), synced lyrics, shuffle and repeat, an editable queue that survives a reload, a sleep timer, keyboard shortcuts, lock-screen controls, a yearly "your listening" recap, light and dark mode.
+- **Cook.** Start a mix from any song and it stays in that song's style. *Cook locally* uses your own music; *Just cook* finds songs you don't know yet. With *keep cooking* on, the music never just stops at the end of the queue.
+- **Long DJ mixes and episodes** pick up where you left off, and can play faster.
 - **Quality you can see.** Every song shows its format (FLAC, MP3 320…), and a quality profile decides what's good enough. Umculo can replace low-quality copies with better ones.
 - **Playlists that stay in sync.** Paste a Spotify or Apple Music playlist link and Umculo builds it from your library and your sources, then keeps it up to date.
 - **For You.** Weekly mix, "because you play…", rediscover old favourites, follow artists and get their new releases.
@@ -77,6 +79,7 @@ Most settings live in the app (**Settings**). These are set in `docker-compose.y
 | `NTFY_URL` | | Phone notifications |
 | `LISTENBRAINZ_USER` | | Better recommendations from your ListenBrainz history |
 | `HOST_PATHS` | `/mnt/Storage/Media=/data` | Host-to-container folder mapping, for reading old playlists that use host paths |
+| `COOK_MIN_SECONDS` | `45` | Shortest song a Cook will include (skips intros and skits) |
 | `SUPPORT_GITHUB`, `SUPPORT_KOFI` | project links | Donation links in Settings (blank to hide) |
 
 ## Putting it on the internet

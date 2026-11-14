@@ -26,7 +26,7 @@ def quality(s):
     if suf in LOSSLESS:
         return "lossless", suf.upper()
     tier = "high" if br >= 315 else "ok" if br >= 250 else "low"
-    return tier, f"{suf.upper()} {br}".strip()
+    return tier, f"{suf.upper()} {core.nice_kbps(br) or ''}".strip()
 
 
 def song_view(s):
@@ -103,6 +103,18 @@ def artist(aid):
     albums = sorted([album_view(a) for a in r.get("album") or []], key=lambda a: -(a["year"] or 0))
     return {"id": r["id"], "name": r.get("name", ""), "image": r.get("artistImageUrl") or "", "albums": albums,
             "songs": sum(a["songs"] for a in albums), "cover": r.get("coverArt") or ""}
+
+
+def mixes():
+    """DJ mixes and podcast episodes you've downloaded, one card per show, newest first."""
+    if not core.builtin():
+        return []
+    srv, root = core.server, core.CONFIG["mixes"].rstrip("/") + "/"
+    rows = srv.db.q(f"""SELECT album.*, MAX(song.created) AS latest, COUNT(song.id) AS n FROM song JOIN album ON album.id = song.album_id
+                        WHERE substr(song.path, 1, ?) = ? AND {srv.lib_sql(me(), 'song.lib')}
+                        GROUP BY album.id ORDER BY latest DESC LIMIT 200""", (len(root), root))
+    return [{"id": r["id"], "name": r["name"], "artist": r["artist"], "year": r["year"] or 0, "songs": r["n"],
+             "duration": r["duration"] or 0, "cover": r["id"], "latest": r["latest"] or 0} for r in rows]
 
 
 def album(alid):
@@ -245,6 +257,8 @@ def handle_get(path, qs):
         return stats(bool(qs.get("fresh")))
     if path == "/api/lib/artists":
         return {"artists": artists()}
+    if path == "/api/lib/mixes":
+        return {"mixes": mixes()}
     m = re.match(r"^/api/lib/(artist|album)/([^/]+)$", path)
     if m:
         return artist(m.group(2)) if m.group(1) == "artist" else album(m.group(2))

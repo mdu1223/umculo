@@ -53,9 +53,10 @@ import listening  # noqa: E402
 import importers  # noqa: E402
 import security  # noqa: E402
 import jellyfin  # noqa: E402
+import cook  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "2.3.1"
+VERSION = "2.4.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -356,6 +357,15 @@ def deezer_search(q, limit=20):
             "preview": d.get("preview") or "",
         })
     return out
+
+
+def nice_kbps(br):
+    """319 -> 320, 255 -> 256: a measured bitrate shown as the setting it was made with."""
+    br = int(br or 0)
+    for std in (64, 96, 128, 160, 192, 224, 256, 320):
+        if abs(br - std) <= max(2, std * 0.02):
+            return std
+    return br
 
 
 def deezer_related(deezer_track_id, limit=12):
@@ -2408,13 +2418,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not s:
                     return self.send_json({})
                 suf, br, sq = (s.get("suffix") or "").lower(), int(s.get("bitRate") or 0), subsonic.CFG["stream_quality"]
-                orig = f"{suf.upper()} {br}" if suf not in LOSSLESS else f"{suf.upper()} {br} kbps"
+                orig = f"{suf.upper()} {nice_kbps(br)}" if suf not in LOSSLESS else f"{suf.upper()} {br} kbps"
                 if sq == "best" or (suf == "mp3" and br <= int(sq) + 8):
                     return self.send_json({"quality": orig, "tier": "lossless" if suf in LOSSLESS else "", "from": "Your library"})
                 return self.send_json({"quality": f"MP3 {sq}", "from": f"Your library, converted from {orig}"})
             out = links.handle_get(u.path, qs)
             if out is None:
-                out = listening.handle_get(u.path, qs)
+                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs)
             if out is None:
                 out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs)
                        or share.handle_get(u.path, qs) or playlists.handle_get(u.path, qs) or recipes.handle_get(u.path, qs)
@@ -2688,6 +2698,7 @@ def main():
     listening.init(sys.modules[__name__])
     importers.init(sys.modules[__name__])
     jellyfin.init(sys.modules[__name__])
+    cook.init(sys.modules[__name__])
     load_jobs()
     threading.Thread(target=scan_loop, daemon=True).start()
     threading.Thread(target=retry_loop, daemon=True).start()

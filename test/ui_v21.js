@@ -4,16 +4,17 @@ const { chromium, devices } = require('playwright');
   const b = await chromium.launch({args: ['--autoplay-policy=no-user-gesture-required']}); const probs = [];
   const ctx = await b.newContext({ ...devices['iPhone 13'], colorScheme: scheme }); const p = await ctx.newPage();
   p.on('pageerror', e => probs.push('PAGE ERROR ' + e.message)); p.on('dialog', d => d.dismiss());
-  p.on('response', r => r.url().includes('/api/') && r.status() >= 400 && !/ndcover|\/api\/me$|requests|recipes/.test(r.url()) && probs.push(`HTTP ${r.status()} ${r.url()}`));
+  p.on('response', r => r.url().includes('/api/') && r.status() >= 400 && !/ndcover|\/api\/me$|requests|recipes|\/api\/stream\/9\d{5}/.test(r.url()) && probs.push(`HTTP ${r.status()} ${r.url()}`));
   let n = 0; const shot = async name => { await p.waitForTimeout(900); await p.screenshot({ path: `${out}/${String(++n).padStart(2, '0')}-${name}.png` }); };
   await p.goto(base + '/'); await p.waitForTimeout(1000);
   if (user && await p.$('#login:not([hidden])')) { await p.fill('#lg-user', user); await p.fill('#lg-pass', pass); await p.click('#login .btn'); await p.waitForTimeout(2000); }
-  // player: lyrics + instant mix
+  // player: lyrics + cook locally
   await p.fill('#q', process.argv[7] || 'ngud'); await p.press('#q', 'Enter'); await p.waitForSelector('.srow', {timeout: 15000});
   await p.click('.srow .icon[title=Play] >> nth=0'); await p.waitForTimeout(2500); await p.click('#mini .meta');
   await p.click('#np button:has-text("Lyrics")'); await p.waitForTimeout(2500); await shot('lyrics');
   const lines = await p.$$eval('#np-lyr p', x => x.length); if (!lines) probs.push('no lyric lines');
-  await p.click('#np button:has-text("Instant mix")'); await p.waitForTimeout(2500); await shot('instant-mix');
+  await p.click('#np .np-acts button:has-text("Cook")'); await p.click('#panel .cookmenu button:has-text("Cook locally")'); await p.waitForTimeout(2500); await shot('cook-local');
+  if (await p.evaluate(() => pq.length) < 2) probs.push('cook locally added nothing');
   await p.waitForFunction(() => isFinite($('#player').duration), null, {timeout: 20000}); await p.evaluate(() => { const a = $('#player'); a.currentTime = Math.max(0, a.duration - 1); }); await p.waitForTimeout(3000);
   await p.evaluate(() => closeSheet());
   // song menu

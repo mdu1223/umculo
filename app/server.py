@@ -263,7 +263,7 @@ def stream_label(u, sid, sq, can):
     fmt, want = web_params(sq)
     convert, kbps, out_fmt = plan(r, fmt, want, set(filter(None, can.lower().split(","))) or None, network())
     lossless = r["suffix"] in LOSSLESS
-    orig = f"{r['suffix'].upper()} {r['bitrate'] or ''}".strip() + (" kbps" if lossless else "")
+    orig = f"{r['suffix'].upper()} {(r['bitrate'] if lossless else core.nice_kbps(r['bitrate'])) or ''}".strip() + (" kbps" if lossless else "")
     if not convert:
         return {"quality": orig, "tier": "lossless" if lossless else "", "from": "Your library"}
     return {"quality": f"{out_fmt.upper()} {kbps}", "from": f"Your library, converted from {orig}"}
@@ -550,48 +550,8 @@ def log_listen(u, r, t, source="library"):
 
 
 def instant_mix(u, seed, n=50):
-    """Songs from your library that go with this one: the artist, artists like them, the same sound and era."""
-    r = db.q(f"SELECT * FROM song WHERE id=? AND {lib_sql(u)}", (seed,), one=True) or \
-        db.q(f"SELECT * FROM song WHERE album_id=? AND {lib_sql(u)} ORDER BY RANDOM() LIMIT 1", (seed,), one=True) or \
-        db.q(f"SELECT * FROM song WHERE (albumartist_id=? OR artist_id=?) AND {lib_sql(u)} ORDER BY RANDOM() LIMIT 1", (seed, seed), one=True)
-    if not r:
-        return []
-    picked, seen = [r], {r["id"]}
-
-    def add(rows, limit):
-        k = 0
-        for x in rows:
-            if x["id"] not in seen and k < limit:
-                seen.add(x["id"]); picked.append(x); k += 1
-    add(db.q(f"SELECT * FROM song WHERE {lib_sql(u)} AND (albumartist_id=? OR artist_id=?) ORDER BY RANDOM() LIMIT 8",
-             (r["albumartist_id"], r["artist_id"])), max(3, n // 6))
-    names = []
-    try:
-        aid = dz_artist(db.primary(r["artist"]))
-        if aid:
-            names = [core.norm(x["name"]) for x in (core.dz_get(f"/artist/{aid}/related?limit=25", 86400 * 7) or {}).get("data") or []]
-    except Exception:  # noqa: BLE001
-        names = []
-    if names:
-        rel = [x for x in db.q(f"SELECT id, name FROM artist WHERE {lib_sql(u)}") if core.norm(x["name"]) in names]
-        if rel:
-            ids = [x["id"] for x in rel]
-            add(db.q(f"SELECT * FROM song WHERE {lib_sql(u)} AND (albumartist_id IN ({','.join('?' * len(ids))}) OR artist_id IN ({','.join('?' * len(ids))})) "
-                     "ORDER BY RANDOM() LIMIT ?", ids + ids + [n]), n // 2)
-    if r["genre"]:
-        y = r["year"] or 0
-        add(db.q(f"""SELECT * FROM song WHERE {lib_sql(u)} AND lower(genre)=lower(?) ORDER BY
-                     CASE WHEN ? > 0 AND year BETWEEN ? AND ? THEN 0 ELSE 1 END, RANDOM() LIMIT ?""", (r["genre"], y, y - 6, y + 6, n)), n)
-    if len(picked) < n // 2:                       # thin tags: fill with what you play most
-        add(db.q(f"""SELECT song.* FROM song LEFT JOIN ann ON ann.item = song.id AND ann.user = ? WHERE {lib_sql(u, 'song.lib')}
-                     ORDER BY ann.plays DESC, RANDOM() LIMIT ?""", (uid(u), n)), n - len(picked))
-    head, rest = picked[:1], picked[1:]
-    random.shuffle(rest)                           # mixed, but never the same artist three in a row
-    out, last = list(head), [head[0]["albumartist_id"]]
-    while rest:
-        i = next((k for k, x in enumerate(rest) if x["albumartist_id"] not in last[-2:]), 0)
-        x = rest.pop(i); out.append(x); last.append(x["albumartist_id"])
-    return out[:n]
+    """Songs from your library in the same style as this one (Cook locally; music apps ask for this too)."""
+    return core.cook.cook_local(u, seed, n)[0]
 
 
 def listenbrainz(token, r, t):
