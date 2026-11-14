@@ -16,4 +16,5 @@ run family   8099 python3 test/v20_family.py 8099
 run api21    8100 python3 test/v21_api.py 8100 mdu ndpass
 run family22 8101 python3 test/v22_family.py 8101
 run security 8102 python3 test/v23_security.py 8102
+run cook     8103 python3 test/v24_cook.py 8103
 exit $FAIL
