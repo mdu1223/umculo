@@ -54,6 +54,7 @@ import importers  # noqa: E402
 import security  # noqa: E402
 import jellyfin  # noqa: E402
 import cook  # noqa: E402
+import mixtidy  # noqa: E402
 
 # --------------------------------------------------------------------------- config
 VERSION = "2.4.0"
@@ -78,6 +79,7 @@ CONFIG = {
     "staging": E("STAGING_DIR", "/data/downloads/umculo"),
     "config": E("CONFIG_DIR", "/config"),
     "mix_seconds": int(E("MIX_THRESHOLD", "1200")),
+    "tidy_mixes": E("TIDY_MIXES", "1") == "1",           # one folder per show, the show as the album, duplicates set aside
     "search_seconds": int(E("SEARCH_SECONDS", "20")),
     "deezer": E("DEEZER_API", "https://api.deezer.com").rstrip("/"),
     "sources": [s.strip() for s in E("SOURCES", "soulseek,usenet,soundcloud,youtube").split(",") if s.strip()],
@@ -2424,7 +2426,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"quality": f"MP3 {sq}", "from": f"Your library, converted from {orig}"})
             out = links.handle_get(u.path, qs)
             if out is None:
-                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs)
+                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path)
             if out is None:
                 out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs)
                        or share.handle_get(u.path, qs) or playlists.handle_get(u.path, qs) or recipes.handle_get(u.path, qs)
@@ -2549,7 +2551,7 @@ class Handler(BaseHTTPRequestHandler):
                 tr_set(job, tr, state="downloading", message="Starting your choice")
                 POOL.submit(manual_pick, job, tr, chk["target"], cand)
                 return self.send_json({"ok": True})
-            out = links.handle_post(self.path, b)
+            out = mixtidy.handle("POST", self.path.split("?")[0]) or links.handle_post(self.path, b)
             if out is None:
                 out = listening.handle_post(self.path.split("?")[0], b)
             if out is None:
@@ -2699,6 +2701,7 @@ def main():
     importers.init(sys.modules[__name__])
     jellyfin.init(sys.modules[__name__])
     cook.init(sys.modules[__name__])
+    mixtidy.init(sys.modules[__name__])
     load_jobs()
     threading.Thread(target=scan_loop, daemon=True).start()
     threading.Thread(target=retry_loop, daemon=True).start()

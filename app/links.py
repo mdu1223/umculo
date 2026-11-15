@@ -290,7 +290,7 @@ def find_entry(show, entry_id):
 # --------------------------------------------------------------------------- downloading
 def candidate_for(show, e):
     long = (e.get("duration") or 0) > core.CONFIG["mix_seconds"]
-    folder = show["title"] if show.get("podcast") or show["kind"] == "show" else (show.get("author") or "Mixes")
+    folder = core.mixtidy.show_name(show["title"] if show.get("podcast") else (show.get("author") or show["title"] or "Mixes"))
     return {"source": "link", "exact": True, "score": 0, "quality": e.get("quality") or "Best available",
             "tier": e.get("tier") or "unknown", "eta": "", "name": e["title"], "detail": show.get("author") or show["title"],
             "duration": e.get("duration"), "podcast": bool(show.get("podcast")), "folder": folder,
@@ -579,6 +579,17 @@ def segment(path, offset):
             os.remove(tmp)
         except OSError:
             pass
+
+
+def moved_files(moved):
+    """Tidy mixes moved some files: point the song finder's results at their new place."""
+    if not moved:
+        return
+    with LOCK:
+        for f in FINDS.values():
+            if f.get("file") in moved:
+                f["file"] = moved[f["file"]]
+    save_finds()
 
 
 def save_finds():

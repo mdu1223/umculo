@@ -523,6 +523,10 @@ def scan_loop():
                 FULL_NEXT[0] = False
                 relink_playlists()
                 core.server.prune_cache()
+                try:
+                    core.mixtidy.after_scan()
+                except Exception:  # noqa: BLE001
+                    core.log("tidy mixes:", traceback.format_exc())
         except Exception:  # noqa: BLE001
             core.log("scan loop:", traceback.format_exc())
         for _ in range(int(core.CONFIG.get("scan_minutes", 15)) * 6):
