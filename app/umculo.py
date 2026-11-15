@@ -57,7 +57,7 @@ import cook  # noqa: E402
 import mixtidy  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "2.4.0"
+VERSION = "2.4.1"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2439,6 +2439,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": str(e)}, 403)
         except LookupError as e:
             return self.send_json({"error": str(e)}, 404)
+        except (BrokenPipeError, ConnectionResetError):
+            return None                               # the phone or browser went away mid-answer: nothing to report
         except Exception as e:  # noqa: BLE001
             log("GET failed:", traceback.format_exc())
             return self.send_json({"error": str(e)}, 500)

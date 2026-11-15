@@ -25,7 +25,8 @@ def quality(s):
     suf, br = (s.get("suffix") or "").lower(), int(s.get("bitRate") or 0)
     if suf in LOSSLESS:
         return "lossless", suf.upper()
-    tier = "high" if br >= 315 else "ok" if br >= 250 else "low"
+    opus = suf in ("opus", "ogg")                 # Opus needs far fewer kbps than MP3 for the same sound
+    tier = "high" if br >= (155 if opus else 315) else "ok" if br >= (110 if opus else 250) else "low"
     return tier, f"{suf.upper()} {core.nice_kbps(br) or ''}".strip()
 
 
@@ -130,7 +131,7 @@ def playlists():
         rows = srv.pl_songs(u, r["id"])
         out.append({"id": r["id"], "name": r["name"], "songs": len(rows), "path": r["path"] or "",
                     "duration": int(sum(x["duration"] or 0 for x in rows)), "cover": rows[0]["album_id"] if rows else "",
-                    "auto": r["id"] == core.musicdb.MIXES_PL, "comment": r["comment"] or ""})
+                    "mine": r["owner"] == srv.uid(u), "comment": r["comment"] or ""})
     return out
 
 
@@ -143,6 +144,19 @@ def playlist(pid):
     a = srv.anns(u, [x["id"] for x in rows])
     return {"id": pid, "name": r["name"], "comment": r["comment"] or "",
             "songs": [song_view(srv.song(x, a.get(x["id"]))) for x in rows]}
+
+
+def delete_playlist(pid):
+    """Remove a playlist made in a music app (or brought over from an old server). Songs stay; files aren't touched."""
+    srv, u = core.server, me()
+    r = srv.db.q("SELECT * FROM playlist WHERE id=?", (pid,), one=True)
+    if not r or (r["owner"] != srv.uid(u) and not core.users.is_admin(u)):
+        raise LookupError("Playlist not found")
+    if r["path"]:
+        raise ValueError("This playlist lives in a file: delete it from Playlists instead")
+    srv.db.x("DELETE FROM plsong WHERE pid=?", (pid,))
+    srv.db.x("DELETE FROM playlist WHERE id=?", (pid,))
+    return {"ok": True, "name": r["name"]}
 
 
 def album(alid):
@@ -302,6 +316,9 @@ def handle_get(path, qs):
 
 
 def handle_post(path, b):
+    m = re.match(r"^/api/lib/playlist/([\w-]+)/delete$", path)
+    if m:
+        return delete_playlist(m.group(1))
     if path == "/api/lib/delete":
         return delete(b.get("kind"), str(b.get("id") or ""))
     if path == "/api/lib/share":

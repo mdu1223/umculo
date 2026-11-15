@@ -60,9 +60,19 @@ def set_album(path, show):
 
 
 def key_title(t, fallback):
-    t = re.split(r"\s+[|｜]\s+", t or "")[0] or os.path.splitext(fallback)[0]
+    t = t or os.path.splitext(fallback)[0]
     t = re.sub(r"^\d{4}-\d{2}-\d{2}\s*-\s*", "", t)            # podcast files start with the date
     return re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()
+
+
+def same_mix(a, b):
+    """The same recording twice: one title is the other (or its start, before the channel's tagline),
+    and they run the same length. 'Mix | September' and 'Mix | November' are different mixes."""
+    ka, kb = a["key"], b["key"]
+    if not (ka == kb or ka.startswith(kb + " ") or kb.startswith(ka + " ")):
+        return False
+    la, lb = a["length"], b["length"]
+    return not la or not lb or abs(la - lb) <= max(20, 0.02 * max(la, lb))
 
 
 def plan():
@@ -89,11 +99,16 @@ def plan():
     for f in files:
         folders.setdefault(f["show"].lower(), f["show"])
         f["show"] = folders[f["show"].lower()]
-    groups = {}
+    groups = []                                                  # lists of files that are the same mix
     for f in files:
-        groups.setdefault((f["show"].lower(), key_title(f["tags"].get("title"), f["name"])), []).append(f)
+        f["key"] = key_title(f["tags"].get("title"), f["name"])
+        g = next((g for g in groups if g[0]["show"] == f["show"] and all(same_mix(f, x) for x in g)), None)
+        if g:
+            g.append(f)
+        else:
+            groups.append([f])
     moves, dups, retag = [], [], []
-    for (_s, _t), fs in groups.items():
+    for fs in groups:
         longest = round(max(x["length"] for x in fs) / 60)      # the full mix (within a minute), then the best bitrate
         fs.sort(key=lambda f: (round(f["length"] / 60) >= longest - 1, f["br"], f["size"]), reverse=True)
         keep, extra = fs[0], fs[1:]

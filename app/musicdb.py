@@ -480,28 +480,10 @@ MIXES_PL = "pmixes"
 
 
 def mixes_playlist():
-    """One playlist, "Mixes": every DJ mix and episode you've downloaded, newest first. Kept up to date by each scan."""
-    root = core.CONFIG["mixes"].rstrip("/") + "/"
-    songs = [r["id"] for r in q("SELECT id FROM song WHERE substr(path, 1, ?) = ? ORDER BY created DESC, path", (len(root), root))]
-    old = q("SELECT * FROM playlist WHERE id=?", (MIXES_PL,), one=True)
-    if not songs:
-        if old:
-            x("DELETE FROM plsong WHERE pid=?", (MIXES_PL,))
-            x("DELETE FROM playlist WHERE id=?", (MIXES_PL,))
-        return
-    have = [r["song"] for r in q("SELECT song FROM plsong WHERE pid=? ORDER BY pos", (MIXES_PL,))]
-    if old and have == songs:
-        return
-    now = time.time()
-    with LOCK:
-        DB.execute("""INSERT OR REPLACE INTO playlist (id, name, owner, public, comment, created, changed, path, mtime)
-                      VALUES (?,?,?,?,?,?,?,?,?)""", (MIXES_PL, "Mixes", "admin", 1,
-                                                      "Every DJ mix and episode you've downloaded, newest first",
-                                                      (old or {}).get("created") or now, now, "", 0))
-        DB.execute("DELETE FROM plsong WHERE pid=?", (MIXES_PL,))
-        DB.executemany("INSERT INTO plsong (pid, pos, song, path) VALUES (?,?,?,?)",
-                       [(MIXES_PL, i, sid, "") for i, sid in enumerate(songs)])
-        DB.commit()
+    """Umculo already keeps one playlist of every mix (the "Mixtapes" file); the second one 2.4.0 made goes."""
+    if q("SELECT id FROM playlist WHERE id=?", (MIXES_PL,), one=True):
+        x("DELETE FROM plsong WHERE pid=?", (MIXES_PL,))
+        x("DELETE FROM playlist WHERE id=?", (MIXES_PL,))
 
 
 def relink_playlists():

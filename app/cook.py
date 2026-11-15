@@ -295,7 +295,7 @@ def cook_new(u, artist, title, n=40, fam=None, cat=None):
             k += 1
     random.shuffle(pool)
     if style_pool:
-        take(pool, n * 6 // 10)
+        take(pool, n * 8 // 10)       # mostly the artist's circle; style playlists fill the rest
         take(style_pool, n - len(picked))
     take(pool, n - len(picked))
     out = no_runs(picked, lambda i: core.norm(i["artist"]))

@@ -33,5 +33,6 @@ check(not any((x["artist"].lower(), x["title"].lower()) in have for x in nw.get(
 check(web("/api/cook/new/dz/111?n=10").get("songs") is not None, "just cook from a streamed song")
 check("error" in web("/api/cook/local/nope"), "unknown song is an error, not a crash")
 check(web("/api/lib/mixes").get("mixes") == [], "no mixes in this library yet")
+check(isinstance(web("/api/lib/playlists").get("playlists"), list), "library lists playlists")
 print(f"V24 OK {n}" if not bad else f"V24 FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)
