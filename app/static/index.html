@@ -373,6 +373,9 @@ body.member .admin-only{display:none}
 .lib-nums b{display:block;font-size:20px;font-variant-numeric:tabular-nums}.lib-nums span{font-size:12px;color:var(--quiet)}
 .qbar{display:flex;height:8px;border-radius:6px;overflow:hidden;background:var(--chip);margin-top:12px}.qbar i{display:block;height:100%}
 .filepick{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.filepick label{cursor:pointer}
+.pl-play{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 4px}.pl-play .btn{display:inline-flex;align-items:center;gap:6px}
+.trk .rowline.can{cursor:pointer}.trk .rowline.cant{opacity:.55}.trk .rowline.now b{color:var(--accent)}.trk .q-art{width:40px;height:40px;margin-right:10px}
+.icon.plplay{color:var(--accent)}
 .libtabs{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 4px 8px}
 .libtabs h2{margin:0;white-space:nowrap}
 .libtabs .seg{margin:0;flex:none;border-radius:999px;padding:3px;gap:2px}
@@ -891,6 +894,7 @@ function plCard(p) {
       <div class="rowline"><div class="pl-ic ${p.folder}">${p.folder === "spotify" ? "♫" : "◎"}</div>
         <div class="meta" onclick="openPl('${p.id}')"><div class="t">${esc(p.name)}</div>
           <div class="muted">${p.tracks} song${p.tracks === 1 ? "" : "s"}${p.who && me?.user?.is_admin ? " · " + esc(p.who) + "'s" : ""}${p.owner === null && !me?.user?.is_admin ? " · shared with you" : ""}${p.shared_with?.length && me?.user?.is_admin ? " · shared with " + p.shared_with.length : ""}${p.follow ? " · kept in sync" : ""}${line ? " · " + line : ""}</div></div>
+        ${p.tracks ? `<button class="icon plplay" onclick="playPl('${p.id}', false, this)" aria-label="Play" title="Play">${PP_PLAY.replace(/24/g, "20")}</button>` : ""}
         <button class="icon star${plFavs.has(p.id) ? " on" : ""}" onclick="plFav('${p.id}', this)" aria-label="Favourite" title="Favourite">${plFavs.has(p.id) ? "★" : "☆"}</button>
         <button class="icon more" onclick="swToggle(this)" aria-label="More">⋯</button></div>
       ${j && j.running ? `<div class="bar"><i style="width:${Math.max(3,pct)}%"></i></div>` : ""}
@@ -978,12 +982,16 @@ async function openPl(id) {
   clearTimeout(jobTimer); npl = id;
   let d; try { d = await api("/api/pl/" + id); } catch (e) { return toast(e.message); }
   const top = d.rows.filter(t => t.state === "top").length;
+  PLROWS[id] = d.rows; const playable = d.rows.filter(t => t.nd_id);
   const j = d.job && top ? {...d.job, counts: {...d.job.counts, kept: Math.max(0, (d.job.counts.kept || 0) - top), top}} : d.job;
   const html = `<div class="grab"></div>
     <div class="rowline"><div class="meta"><div class="t" style="white-space:normal;font-size:18px">${esc(d.name)}</div>
       <div class="muted">${plural(d.rows.length, "song")} · ${{working:"working on it", watching:"watching", finished:"finished", resting:"not watching"}[d.status]}</div>
       ${j ? `<div class="muted">${jobLine(j)}</div>` : ""}</div>
       <button class="icon" onclick="closeSheet()">✕</button></div>
+    ${playable.length ? `<div class="pl-play"><button class="btn" onclick="playPl('${id}', false)">${PP_PLAY.replace(/24/g, "18")} Play</button>
+      <button class="btn ghost" onclick="playPl('${id}', true)">${icon("shuffle", 18)} Shuffle</button>
+      <span class="muted">${playable.length < d.rows.length ? `${playable.length} of ${d.rows.length} ready to play` : fmtLen(playable.reduce((a, t) => a + (t.duration || 0), 0))}</span></div>` : ""}
     <div class="chips" style="margin:10px 0">
       <button class="btn small ghost" onclick="plRename('${id}')">Rename</button>
       <button class="btn small ghost" onclick="plAct('${id}','${d.watch ? "unwatch" : "watch"}',this)">${d.watch ? "Stop watching" : "Watch"}</button>
@@ -993,7 +1001,9 @@ async function openPl(id) {
         <button class="sa ren" onclick="plRemove('${id}','${esc(t.key)}',false)">Remove</button>
         ${t.file ? `<button class="sa del" onclick="plRemove('${id}','${esc(t.key)}',true)">Remove &amp; delete file</button>` : ""}</div>
       <div class="sw-front trk">
-      <div class="rowline"><div class="meta"><b>${esc(t.title)}</b> <span class="muted">${esc(t.artist)}</span></div>
+      <div class="rowline${t.nd_id ? " can" : " cant"}${pq[pi]?.nd_id && pq[pi].nd_id === t.nd_id ? " now" : ""}" onclick="if (!event.target.closest('button')) playPlRow('${id}', '${esc(t.key)}')">
+        ${t.nd_id ? artHTML({...t, cover: cover(t.cover)}, "q-art") : `<div class="artbox q-art">${ph(t)}</div>`}
+        <div class="meta"><b>${esc(t.title)}</b> <span class="muted">${esc(t.artist)}</span></div>
       ${STATE_LABEL[t.state] ? `<span class="chip ${t.state}">${STATE_LABEL[t.state]}</span>` : ""}
       <button class="icon more" onclick="swToggle(this)" aria-label="More">⋯</button></div>
       <div class="muted">${qline(t)}</div>
@@ -1001,6 +1011,27 @@ async function openPl(id) {
       </div></div>`).join("") || '<div class="empty">Empty playlist</div>'}</div>`;
   if ($("#sheet").classList.contains("open")) setPanel(html); else openSheet(html);
   if (j && j.running) jobTimer = setTimeout(() => { if ($("#sheet").classList.contains("open") && npl === id) openPl(id); }, 5000);
+}
+const PLROWS = {};
+const fmtLen = sec => sec >= 3600 ? `${Math.floor(sec / 3600)} h ${Math.round(sec % 3600 / 60)} min` : `${Math.max(1, Math.round(sec / 60))} min`;
+const plItem = t => ({nd_id: t.nd_id, title: t.title, artist: t.artist, album_id: t.album_id, cover: cover(t.cover), duration: t.duration});
+async function playPl(id, shuffle, btn) {     // play a playlist straight away (songs not downloaded yet are skipped)
+  let rows = PLROWS[id];
+  if (!rows || btn) { try { rows = PLROWS[id] = (await api("/api/pl/" + id)).rows; } catch (e) { return toast(e.message); } }
+  const items = rows.filter(t => t.nd_id).map(plItem);
+  if (!items.length) return toast("None of these songs are downloaded yet");
+  if (shuffle) for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
+  playList(items, 0);
+  const skipped = rows.length - items.length;
+  toast(`${shuffle ? "Shuffling" : "Playing"} ${plural(items.length, "song")}${skipped ? ` · ${skipped} not downloaded yet` : ""}`);
+}
+function playPlRow(id, key) {
+  const rows = PLROWS[id] || [], t = rows.find(r => r.key === key);
+  if (!t) return;
+  if (!t.nd_id) return toast(t.state === "missing" ? "This file is missing from the server" : "Not downloaded yet");
+  const items = rows.filter(r => r.nd_id).map(plItem);
+  playList(items, items.findIndex(x => x.nd_id === t.nd_id));
+  setTimeout(() => { if (npl === id && $("#sheet").classList.contains("open") && !npOpen()) openPl(id); }, 300);
 }
 async function plRemove(id, key, del) {
   if (del && !confirm("Remove it from the playlist and delete the file from the server? (Kept if another playlist uses it.)")) return;

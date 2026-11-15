@@ -225,7 +225,24 @@ def detail(i):
             rows.append({"key": "f" + hashlib.sha1(e.encode()).hexdigest()[:10], "artist": d["artist"], "title": d["title"],
                          "file": e, "state": "missing" if d["tier"] == "missing" else "listed", "quality": d["quality"],
                          "new_quality": "", "message": "", "job": None})
+    link_songs(rows)
     return {**c, "rows": rows}
+
+
+def link_songs(rows):
+    """Each row that's a file in the library gets its song id, so the web player can play the playlist."""
+    if not core.builtin():
+        return
+    paths = [r["file"] for r in rows if r.get("file")]
+    found = {}
+    for k in range(0, len(paths), 400):
+        part = paths[k:k + 400]
+        for x in core.server.db.q(f"SELECT id, album_id, duration, path FROM song WHERE path IN ({','.join('?' * len(part))})", tuple(part)):
+            found[x["path"]] = x
+    for r in rows:
+        x = found.get(r.get("file") or "")
+        if x:
+            r.update(nd_id=x["id"], album_id=x["album_id"], cover=x["album_id"], duration=x["duration"] or 0)
 
 
 def used_elsewhere(path, skip):
