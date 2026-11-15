@@ -1012,6 +1012,34 @@ async function openPl(id) {
   if ($("#sheet").classList.contains("open")) setPanel(html); else openSheet(html);
   if (j && j.running) jobTimer = setTimeout(() => { if ($("#sheet").classList.contains("open") && npl === id) openPl(id); }, 5000);
 }
+function libPlCard(p) {                       // a playlist your music apps see (Mixes, ones made in Arpeggi): tap to open, ▶ to play
+  return `<div class="box pl libpl"><div class="rowline">
+      ${p.cover ? artHTML({cover: cover(p.cover), artist: p.name}, "q-art") : `<div class="artbox q-art">${ph({artist: p.name})}</div>`}
+      <div class="meta" onclick="openLibPl('${p.id}')"><div class="t">${esc(p.name)}</div>
+        <div class="muted">${plural(p.songs, p.auto ? "mix" : "song")}${p.duration ? " · " + fmtLen(p.duration) : ""}${p.auto ? " · made by Umculo" : " · from your music apps"}</div></div>
+      ${p.songs ? `<button class="icon plplay" onclick="playLibPl('${p.id}', false)" aria-label="Play" title="Play">${PP_PLAY.replace(/24/g, "20")}</button>` : ""}</div></div>`;
+}
+const LIBPL = {};
+const libSong = s => ({...s, nd_id: s.id, cover: s.cover ? cover(s.cover) : ""});
+async function libPlSongs(id) { if (!LIBPL[id]) LIBPL[id] = await api("/api/lib/playlist/" + id); return LIBPL[id]; }
+async function playLibPl(id, shuffle, at) {
+  let d; try { d = await libPlSongs(id); } catch (e) { return toast(e.message); }
+  const items = d.songs.map(libSong); if (!items.length) return toast("This playlist is empty");
+  if (shuffle) for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
+  playList(items, at || 0); if (at === undefined) toast(`${shuffle ? "Shuffling" : "Playing"} ${esc(d.name)}`);
+}
+async function openLibPl(id) {
+  delete LIBPL[id]; let d; try { d = await libPlSongs(id); } catch (e) { return toast(e.message); }
+  const total = d.songs.reduce((a, x) => a + (x.duration || 0), 0);
+  openSheet(`<div class="grab"></div><div class="rowline"><div class="meta"><div class="t" style="white-space:normal;font-size:18px">${esc(d.name)}</div>
+      <div class="muted">${plural(d.songs.length, "song")}${total ? " · " + fmtLen(total) : ""}${d.comment ? " · " + esc(d.comment) : ""}</div></div>
+      <button class="icon" onclick="closeSheet()" aria-label="Close">✕</button></div>
+    ${d.songs.length ? `<div class="pl-play"><button class="btn" onclick="playLibPl('${id}', false)">${PP_PLAY.replace(/24/g, "18")} Play</button>
+      <button class="btn ghost" onclick="playLibPl('${id}', true)">${icon("shuffle", 18)} Shuffle</button></div>` : ""}
+    <div class="box">${d.songs.map((x, i) => `<div class="trk"><div class="rowline can${pq[pi]?.nd_id === x.id ? " now" : ""}" onclick="playLibPl('${id}', false, ${i})">
+      ${artHTML(libSong(x), "q-art")}<div class="meta"><b>${esc(x.title)}</b> <span class="muted">${esc(x.artist)}</span></div>
+      <span class="muted small">${mmss(x.duration)}</span></div></div>`).join("") || '<div class="empty">Empty playlist</div>'}</div>`);
+}
 const PLROWS = {};
 const fmtLen = sec => sec >= 3600 ? `${Math.floor(sec / 3600)} h ${Math.round(sec % 3600 / 60)} min` : `${Math.max(1, Math.round(sec / 60))} min`;
 const plItem = t => ({nd_id: t.nd_id, title: t.title, artist: t.artist, album_id: t.album_id, cover: cover(t.cover), duration: t.duration});
@@ -2342,12 +2370,15 @@ async function renderLibPane() {
   if (libTab === "playlists") {
     head.innerHTML = `Playlists${pls.length ? ` <span class="count">${pls.length}</span>` : ""}`;
     if (!pls.length) pane.innerHTML = `<div class="empty"><span class="spin"></span></div>`;
-    try { const [r, f] = await Promise.all([api("/api/pl"), api("/api/pl/favs").catch(() => ({favs: []}))]); pls = r.playlists; plFavs = new Set(f.favs); }
+    let lib = [];
+    try { const [r, f, l] = await Promise.all([api("/api/pl"), api("/api/pl/favs").catch(() => ({favs: []})), api("/api/lib/playlists").catch(() => ({playlists: []}))]);
+          pls = r.playlists; plFavs = new Set(f.favs); lib = l.playlists; }
     catch (e) { return pane.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
     if (libTab !== "playlists") return;
-    head.innerHTML = `Playlists <span class="count">${pls.length}</span>`;
+    const managed = new Set(pls.map(p => p.path)), others = lib.filter(p => !managed.has(p.path) || !p.path);
+    head.innerHTML = `Playlists <span class="count">${pls.length + others.length}</span>`;
     const order = [...pls.filter(p => plFavs.has(p.id)), ...pls.filter(p => !plFavs.has(p.id))];
-    pane.innerHTML = (order.length ? order.map(plCard).join("") : `<div class="empty">No playlists yet.</div>`) +
+    pane.innerHTML = others.map(libPlCard).join("") + (order.length || others.length ? order.map(plCard).join("") : `<div class="empty">No playlists yet.</div>`) +
       `<button class="btn ghost" style="width:100%;margin-top:6px" onclick="show('playlists')">Import a playlist</button>`;
     return;
   }

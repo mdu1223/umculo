@@ -113,8 +113,36 @@ def mixes():
     rows = srv.db.q(f"""SELECT album.*, MAX(song.created) AS latest, COUNT(song.id) AS n FROM song JOIN album ON album.id = song.album_id
                         WHERE substr(song.path, 1, ?) = ? AND {srv.lib_sql(me(), 'song.lib')}
                         GROUP BY album.id ORDER BY latest DESC LIMIT 200""", (len(root), root))
-    return [{"id": r["id"], "name": r["name"], "artist": r["artist"], "year": r["year"] or 0, "songs": r["n"],
+    loose = {os.path.basename(root.rstrip("/")).lower(), "", "mixes", "podcasts"}
+    return [{"id": r["id"], "name": "More mixes" if (r["name"] or "").lower() in loose else r["name"],
+             "artist": "Mixes saved before shows had names" if (r["name"] or "").lower() in loose else r["artist"],
+             "year": r["year"] or 0, "songs": r["n"],
              "duration": r["duration"] or 0, "cover": r["id"], "latest": r["latest"] or 0} for r in rows]
+
+
+def playlists():
+    """Every playlist your music apps see (Arpeggi and friends), so the web player can play the same ones."""
+    if not core.builtin():
+        return []
+    srv, u = core.server, me()
+    out = []
+    for r in srv.visible_playlists(u):
+        rows = srv.pl_songs(u, r["id"])
+        out.append({"id": r["id"], "name": r["name"], "songs": len(rows), "path": r["path"] or "",
+                    "duration": int(sum(x["duration"] or 0 for x in rows)), "cover": rows[0]["album_id"] if rows else "",
+                    "auto": r["id"] == core.musicdb.MIXES_PL, "comment": r["comment"] or ""})
+    return out
+
+
+def playlist(pid):
+    srv, u = core.server, me()
+    r = next((x for x in srv.visible_playlists(u) if x["id"] == pid), None)
+    if not r:
+        raise LookupError("Playlist not found")
+    rows = srv.pl_songs(u, pid)
+    a = srv.anns(u, [x["id"] for x in rows])
+    return {"id": pid, "name": r["name"], "comment": r["comment"] or "",
+            "songs": [song_view(srv.song(x, a.get(x["id"]))) for x in rows]}
 
 
 def album(alid):
@@ -259,6 +287,11 @@ def handle_get(path, qs):
         return {"artists": artists()}
     if path == "/api/lib/mixes":
         return {"mixes": mixes()}
+    if path == "/api/lib/playlists":
+        return {"playlists": playlists()}
+    m = re.match(r"^/api/lib/playlist/([\w-]+)$", path)
+    if m:
+        return playlist(m.group(1))
     m = re.match(r"^/api/lib/(artist|album)/([^/]+)$", path)
     if m:
         return artist(m.group(2)) if m.group(1) == "artist" else album(m.group(2))

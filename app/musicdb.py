@@ -326,6 +326,10 @@ def scan(full=False):
         SCAN["removed"] = len(gone)
         rebuild()
         sync_playlists(pl_files)
+        try:
+            mixes_playlist()
+        except Exception:  # noqa: BLE001
+            core.log("mixes playlist:", traceback.format_exc())
         SCAN.update(last=time.time(), took=round(time.time() - t0, 1))
         if SCAN["added"] or SCAN["changed"] or SCAN["removed"]:
             core.log(f"library scan: {SCAN['count']} songs, {SCAN['added']} new, {SCAN['changed']} changed, "
@@ -434,7 +438,8 @@ def merge_split_albums():
 
 def sync_playlists(files):
     """Playlist files (yours, Spotify's, imports, each person's) become playlists of their owner."""
-    paths = {p for p, _lib in files}
+    mixes = core.CONFIG["mixes"].rstrip("/") + "/"
+    paths = {p for p, _lib in files if not p.startswith(mixes)}      # files old tools left among the mixes aren't playlists
     try:
         paths |= set(core.playlists.files())
     except Exception:  # noqa: BLE001
@@ -469,6 +474,34 @@ def sync_playlists(files):
                 r = DB.execute("SELECT id FROM song WHERE path=?", (e,)).fetchone()
                 DB.execute("INSERT INTO plsong (pid, pos, song, path) VALUES (?,?,?,?)", (pid, i, r["id"] if r else "", e))
             DB.commit()
+
+
+MIXES_PL = "pmixes"
+
+
+def mixes_playlist():
+    """One playlist, "Mixes": every DJ mix and episode you've downloaded, newest first. Kept up to date by each scan."""
+    root = core.CONFIG["mixes"].rstrip("/") + "/"
+    songs = [r["id"] for r in q("SELECT id FROM song WHERE substr(path, 1, ?) = ? ORDER BY created DESC, path", (len(root), root))]
+    old = q("SELECT * FROM playlist WHERE id=?", (MIXES_PL,), one=True)
+    if not songs:
+        if old:
+            x("DELETE FROM plsong WHERE pid=?", (MIXES_PL,))
+            x("DELETE FROM playlist WHERE id=?", (MIXES_PL,))
+        return
+    have = [r["song"] for r in q("SELECT song FROM plsong WHERE pid=? ORDER BY pos", (MIXES_PL,))]
+    if old and have == songs:
+        return
+    now = time.time()
+    with LOCK:
+        DB.execute("""INSERT OR REPLACE INTO playlist (id, name, owner, public, comment, created, changed, path, mtime)
+                      VALUES (?,?,?,?,?,?,?,?,?)""", (MIXES_PL, "Mixes", "admin", 1,
+                                                      "Every DJ mix and episode you've downloaded, newest first",
+                                                      (old or {}).get("created") or now, now, "", 0))
+        DB.execute("DELETE FROM plsong WHERE pid=?", (MIXES_PL,))
+        DB.executemany("INSERT INTO plsong (pid, pos, song, path) VALUES (?,?,?,?)",
+                       [(MIXES_PL, i, sid, "") for i, sid in enumerate(songs)])
+        DB.commit()
 
 
 def relink_playlists():
