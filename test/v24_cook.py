@@ -34,5 +34,25 @@ check(web("/api/cook/new/dz/111?n=10").get("songs") is not None, "just cook from
 check("error" in web("/api/cook/local/nope"), "unknown song is an error, not a crash")
 check(web("/api/lib/mixes").get("mixes") == [], "no mixes in this library yet")
 check(isinstance(web("/api/lib/playlists").get("playlists"), list), "library lists playlists")
+# v2.5 likes and smart mixes
+import urllib.request as _u
+def post(path, body):
+    rq = _u.Request(B + path, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with _u.urlopen(rq, timeout=30) as r: return json.loads(r.read())
+    except urllib.error.HTTPError as e: return json.loads(e.read() or b"{}")
+other = r["songs"][1]
+check(post("/api/like", {"nd_id": other["id"], "value": 1}).get("ok"), "like a library song")
+check("n" + other["id"] in web("/api/likes")["liked"], "it shows as liked")
+check(any(m["id"] == "liked" and m["songs"] == 1 for m in web("/api/smart")["mixes"]), "liked songs mix appears")
+check(web("/api/smart/liked")["songs"][0]["id"] == other["id"], "liked songs mix has it")
+check(post("/api/like", {"nd_id": other["id"], "value": -1}).get("ok"), "not for me")
+st = web("/api/likes")
+check("n" + other["id"] in st["disliked"] and "n" + other["id"] not in st["liked"], "moved to disliked")
+check(all(other["id"] not in [s["id"] for s in web(f"/api/cook/local/{seed['id']}")["songs"]] for _ in range(3)), "a disliked song is never cooked")
+check(post("/api/like", {"deezer_id": "111", "artist": "FreakSA", "title": "Machine Gun", "value": 1}).get("ok"), "like an internet song")
+check("d111" in web("/api/likes")["liked"], "internet like is kept")
+check(post("/api/like", {"nd_id": other["id"], "value": 0}).get("ok") and "n" + other["id"] not in web("/api/likes")["disliked"], "clearing works")
+check("error" in post("/api/like", {"value": 1}), "a like needs a song")
 print(f"V24 OK {n}" if not bad else f"V24 FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)

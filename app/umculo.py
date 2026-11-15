@@ -55,9 +55,10 @@ import security  # noqa: E402
 import jellyfin  # noqa: E402
 import cook  # noqa: E402
 import mixtidy  # noqa: E402
+import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "2.4.1"
+VERSION = "2.5.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2426,7 +2427,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"quality": f"MP3 {sq}", "from": f"Your library, converted from {orig}"})
             out = links.handle_get(u.path, qs)
             if out is None:
-                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path)
+                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs)
             if out is None:
                 out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs)
                        or share.handle_get(u.path, qs) or playlists.handle_get(u.path, qs) or recipes.handle_get(u.path, qs)
@@ -2553,7 +2554,7 @@ class Handler(BaseHTTPRequestHandler):
                 tr_set(job, tr, state="downloading", message="Starting your choice")
                 POOL.submit(manual_pick, job, tr, chk["target"], cand)
                 return self.send_json({"ok": True})
-            out = mixtidy.handle("POST", self.path.split("?")[0]) or links.handle_post(self.path, b)
+            out = mixtidy.handle("POST", self.path.split("?")[0]) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
             if out is None:
                 out = listening.handle_post(self.path.split("?")[0], b)
             if out is None:
@@ -2704,6 +2705,7 @@ def main():
     jellyfin.init(sys.modules[__name__])
     cook.init(sys.modules[__name__])
     mixtidy.init(sys.modules[__name__])
+    likes.init(sys.modules[__name__])
     load_jobs()
     threading.Thread(target=scan_loop, daemon=True).start()
     threading.Thread(target=retry_loop, daemon=True).start()

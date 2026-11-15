@@ -376,6 +376,20 @@ body.member .admin-only{display:none}
 .pl-play{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 4px}.pl-play .btn{display:inline-flex;align-items:center;gap:6px}
 .trk .rowline.can{cursor:pointer}.trk .rowline.cant{opacity:.55}.trk .rowline.now b{color:var(--accent)}.trk .q-art{width:40px;height:40px;margin-right:10px}
 .icon.plplay{color:var(--accent)}
+.icon.heart{border:0;background:none;color:var(--quiet);flex:none;transition:color .2s,transform .2s}.icon.heart.on{color:#ff4d6d}
+.icon.heart.pop{animation:pop .45s cubic-bezier(.2,.9,.3,1.6)}@keyframes pop{40%{transform:scale(1.45)}}
+.np-meta{position:relative;padding:0 46px}.np-meta .heart.big{position:absolute;right:-4px;top:2px;width:44px;height:44px}.np-meta .heart.big svg{width:26px;height:26px}
+.np-meta .nfm{position:absolute;left:-4px;top:2px;width:44px;height:44px;border:0;background:none;color:var(--quiet);opacity:.8}
+.eq{display:none;align-items:flex-end;gap:2px;height:16px}.eq i{width:3px;border-radius:2px;background:currentColor;animation:eq 0.9s ease-in-out infinite}
+.eq i:nth-child(1){height:60%}.eq i:nth-child(2){height:100%;animation-delay:-.3s}.eq i:nth-child(3){height:45%;animation-delay:-.6s}
+@keyframes eq{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}.eq i{transform-origin:bottom}
+body.is-paused .eq i{animation-play-state:paused}
+.playing>.plplay>svg,.playing .plplay>svg,.playing .tplay>svg{display:none}.playing .eq{display:inline-flex}
+.plrow.playing .t,.pl.playing .t,.tile.playing .t{color:var(--accent)}.plrow.playing,.box.pl.playing,.pl.playing{box-shadow:inset 3px 0 0 var(--accent)}
+[data-sid].now b,[data-sid].now .t{color:var(--accent)}
+.tile .art{position:relative}.tplay{position:absolute;right:8px;bottom:8px;width:40px;height:40px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;box-shadow:0 4px 14px rgba(0,0,0,.4);cursor:pointer}
+.mosaic{display:grid;overflow:hidden}.mosaic.n4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}.mosaic img{width:100%;height:100%;object-fit:cover;display:block}
+@media (prefers-reduced-motion:reduce){.eq i,.icon.heart.pop{animation:none}}
 .plrows{padding:4px 12px}.plrow{display:flex;align-items:center;gap:12px;padding:9px 0;cursor:pointer;border-bottom:1px solid var(--line)}.plrow:last-child{border-bottom:0}
 .plrow .q-art{width:52px;height:52px}.plrow .meta{flex:1;min-width:0}.plrow .t{font-weight:700;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;line-height:1.25}
 .plrow .s{color:var(--quiet);font-size:13px;margin-top:2px}
@@ -598,11 +612,10 @@ function libRow(s, i) {
   return `<div class="sw" data-key="${s.id}"><div class="sw-act">${del ? `<button class="sa del" onclick="libDelete('song','${s.id}',${esc(JSON.stringify(s.title))},'search')">Delete</button>` : ""}</div>
     <div class="sw-front card srow">
       <div class="cover">${it.cover ? `<img src="${esc(it.cover)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" onerror="this.remove()">` : ""}${ph(s)}</div>
-      <div class="meta" onclick="playSearch('lib',${i})"><div class="t">${esc(s.title)}</div>
+      <div class="meta" data-sid="${s.id}" onclick="playSearch('lib',${i})"><div class="t">${esc(s.title)}</div>
         <div class="s">${esc(s.artist)}${s.album ? " · " + esc(s.album) : ""} · ${mmss(s.duration)}</div>
         <div style="margin-top:4px"><span class="q ${s.tier}">${esc(s.quality)}</span>${s.plays ? ` <span class="muted" style="font-size:12px">${plural(s.plays, "play")}</span>` : ""}</div></div>
-      <button class="icon" title="Play" onclick="playSearch('lib',${i})">▶</button>
-      <button class="icon more" title="More" onclick="songMenu('lib',${i})">⋯</button></div></div>`;
+      ${heart(it)}<button class="icon more" title="More" onclick="songMenu('lib',${i})">⋯</button></div></div>`;
 }
 function playSearch(kind, i) { lastLibrary = sLib.songs.map(libItem); playList(lastLibrary, i); }
 function renderSearch() {
@@ -647,12 +660,14 @@ async function renderSearchHome() {
     `<div class="empty">Search your music and the whole internet at once: your own songs show up as you type.<br><br>Hearing something you like? Tap the <b>microphone</b>.</div>`;
   if (!homeLib) { try { homeLib = await api("/api/lib"); } catch (e) { homeLib = {}; } }
   const back = (homeLib.recent || []).slice(0, 10), top = (homeLib.frequent || []).filter(a => !back.some(b => b.id === a.id)).slice(0, 10);
+  const sm = await smartMixes();
+  if (sm.length) h = `<h2>Made for you</h2><div class="shelf">${sm.map(smartTile).join("")}</div>` + (r.length || !back.length ? h : "");
   if (back.length) h = `<h2>Jump back in</h2><div class="shelf">${back.map(albumCard).join("")}</div>` + (r.length ? h : "");
   if (top.length) h += `<h2>Your favourites</h2><div class="shelf">${top.map(albumCard).join("")}</div>`;
   if (!rc) { try { const x = await fetch("/api/recipes"); if (x.ok) rc = await x.json(); } catch (e) {} }
   const g = (rc?.genres || []).slice(0, 16);
   if (g.length) h += `<h2>Browse</h2><div class="browse">${g.map((x, i) => `<button class="btile" style="--h:${(i * 47) % 360}" onclick="playStation(${esc(JSON.stringify(x))}, null)">${esc(x)}</button>`).join("")}</div>`;
-  if (!$("#q").value.trim()) $("#results").innerHTML = h;
+  if (!$("#q").value.trim()) { $("#results").innerHTML = h; markPlaying(); }
 }
 function songMenu(kind, i) {
   const s = kind === "lib" ? libItem(sLib.songs[i]) : sCat.catalog[i];
@@ -666,6 +681,7 @@ function songMenu(kind, i) {
       <button onclick="closeSheet(); queueSong(LISTS.menu[0], true)">⤴ Play next</button>
       <button onclick="closeSheet(); queueSong(LISTS.menu[0], false)">＋ Add to queue</button>
       ${kind === "lib" ? `<button onclick="closeSheet(); cookMix('local', LISTS.menu[0])">🍳 Cook locally <span class="muted">· a mix from your music</span></button>` : ""}
+      <button onclick="closeSheet(); notForMe(LISTS.menu[0])">🚫 Not for me <span class="muted">· never cook or suggest it</span></button>
       <button onclick="closeSheet(); cookMix('new', LISTS.menu[0])">🔥 Just cook <span class="muted">· songs you don't know yet</span></button>
       ${kind === "lib" && s.artist_id ? `<button onclick="openLibArtist('${s.artist_id}')">Go to artist</button>` : `<button onclick="openArtistByName(${esc(JSON.stringify((s.artist || "").split(/,| & | feat/i)[0].trim()))})">Go to artist</button>`}
       ${kind === "lib" && s.album_id ? `<button onclick="openLibAlbum('${s.album_id}')">Go to album</button>` : ""}
@@ -898,11 +914,11 @@ function plCard(p) {
       <button class="sa ren" onclick="plRename('${p.id}')">Rename</button>
       <button class="sa watch" onclick="plAct('${p.id}','${p.watch ? "unwatch" : "watch"}',this)">${p.watch ? "Stop watching" : "Watch"}</button>
       <button class="sa del" onclick="plDelete('${p.id}')">Delete</button></div>
-    <div class="sw-front box pl ${p.status}">
+    <div class="sw-front box pl ${p.status}" data-src="${p.id}">
       <div class="rowline"><div class="pl-ic ${p.folder}">${p.folder === "spotify" ? "♫" : "◎"}</div>
         <div class="meta" onclick="openPl('${p.id}')"><div class="t">${esc(p.name)}</div>
           <div class="muted">${p.tracks} song${p.tracks === 1 ? "" : "s"}${p.who && me?.user?.is_admin ? " · " + esc(p.who) + "'s" : ""}${p.owner === null && !me?.user?.is_admin ? " · shared with you" : ""}${p.shared_with?.length && me?.user?.is_admin ? " · shared with " + p.shared_with.length : ""}${p.follow ? " · kept in sync" : ""}${line ? " · " + line : ""}</div></div>
-        ${p.tracks ? `<button class="icon plplay" onclick="playPl('${p.id}', false, this)" aria-label="Play" title="Play">${PP_PLAY.replace(/24/g, "20")}</button>` : ""}
+        ${p.tracks ? `<button class="icon plplay" onclick="srcToggle('${p.id}', () => playPl('${p.id}', false, true))" aria-label="Play" title="Play">${PP_PLAY.replace(/24/g, "20")}${EQ}</button>` : ""}
         <button class="icon star${plFavs.has(p.id) ? " on" : ""}" onclick="plFav('${p.id}', this)" aria-label="Favourite" title="Favourite">${plFavs.has(p.id) ? "★" : "☆"}</button>
         <button class="icon more" onclick="swToggle(this)" aria-label="More">⋯</button></div>
       ${j && j.running ? `<div class="bar"><i style="width:${Math.max(3,pct)}%"></i></div>` : ""}
@@ -1010,11 +1026,11 @@ async function openPl(id) {
         <button class="sa ren" onclick="plRemove('${id}','${esc(t.key)}',false)">Remove</button>
         ${t.file ? `<button class="sa del" onclick="plRemove('${id}','${esc(t.key)}',true)">Remove &amp; delete file</button>` : ""}</div>
       <div class="sw-front trk">
-      <div class="rowline${t.nd_id ? " can" : " cant"}${pq[pi]?.nd_id && pq[pi].nd_id === t.nd_id ? " now" : ""}" onclick="if (!event.target.closest('button')) playPlRow('${id}', '${esc(t.key)}')">
+      <div class="rowline${t.nd_id ? " can" : " cant"}${pq[pi]?.nd_id && pq[pi].nd_id === t.nd_id ? " now" : ""}" ${t.nd_id ? `data-sid="${t.nd_id}"` : ""} onclick="if (!event.target.closest('button')) playPlRow('${id}', '${esc(t.key)}')">
         ${t.nd_id ? artHTML({...t, cover: cover(t.cover)}, "q-art") : `<div class="artbox q-art">${ph(t)}</div>`}
         <div class="meta"><b>${esc(t.title)}</b> <span class="muted">${esc(t.artist)}</span></div>
       ${STATE_LABEL[t.state] ? `<span class="chip ${t.state}">${STATE_LABEL[t.state]}</span>` : ""}
-      <button class="icon more" onclick="swToggle(this)" aria-label="More">⋯</button></div>
+      ${t.nd_id ? heart(t) : ""}<button class="icon more" onclick="swToggle(this)" aria-label="More">⋯</button></div>
       <div class="muted">${qline(t)}</div>
       </div></div>`).join("") || '<div class="empty">Empty playlist</div>'}</div>`;
   if ($("#sheet").classList.contains("open")) setPanel(html); else openSheet(html);
@@ -1029,25 +1045,27 @@ function libPlCard(p) {                       // a playlist your music apps see 
 }
 const LIBPL = {};
 const libSong = s => ({...s, nd_id: s.id, cover: s.cover ? cover(s.cover) : ""});
-async function libPlSongs(id) { if (!LIBPL[id]) LIBPL[id] = await api("/api/lib/playlist/" + id); return LIBPL[id]; }
-async function playLibPl(id, shuffle, at) {
-  let d; try { d = await libPlSongs(id); } catch (e) { return toast(e.message); }
+async function libPlSongs(id, smart) { if (!LIBPL[id]) LIBPL[id] = await api((smart ? "/api/smart/" : "/api/lib/playlist/") + id); return LIBPL[id]; }
+async function playLibPl(id, shuffle, at, smart) {
+  let d; try { if (smart && at === undefined) delete LIBPL[id]; d = await libPlSongs(id, smart); } catch (e) { return toast(e.message); }
   const items = d.songs.map(libSong); if (!items.length) return toast("This playlist is empty");
   if (shuffle) for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
-  playList(items, at || 0); if (at === undefined) toast(`${shuffle ? "Shuffling" : "Playing"} ${esc(d.name)}`);
+  playList(items, items[at || 0] ? at || 0 : 0, {id: (smart ? "smart-" : "") + id, name: d.name}); if (at === undefined) toast(`${shuffle ? "Shuffling" : "Playing"} ${d.name}`);
 }
-async function openLibPl(id) {
-  delete LIBPL[id]; let d; try { d = await libPlSongs(id); } catch (e) { return toast(e.message); }
-  const total = d.songs.reduce((a, x) => a + (x.duration || 0), 0);
-  openSheet(`<div class="grab"></div><div class="rowline"><div class="meta"><div class="t" style="white-space:normal;font-size:18px">${esc(d.name)}</div>
+async function openLibPl(id, smart) {
+  delete LIBPL[id]; let d; try { d = await libPlSongs(id, smart); } catch (e) { return toast(e.message); }
+  const total = d.songs.reduce((a, x) => a + (x.duration || 0), 0), sid = (smart ? "smart-" : "") + id;
+  openSheet(`<div class="grab"></div><div class="rowline"><div class="meta"><div class="t" style="white-space:normal;font-size:20px;font-weight:800">${esc(d.name)}</div>
       <div class="muted">${plural(d.songs.length, "song")}${total ? " · " + fmtLen(total) : ""}${d.comment ? " · " + esc(d.comment) : ""}</div></div>
       <button class="icon" onclick="closeSheet()" aria-label="Close">✕</button></div>
-    ${d.songs.length ? `<div class="pl-play"><button class="btn" onclick="playLibPl('${id}', false)">${PP_PLAY.replace(/24/g, "18")} Play</button>
-      <button class="btn ghost" onclick="playLibPl('${id}', true)">${icon("shuffle", 18)} Shuffle</button></div>` : ""}
-    <div class="chips" style="margin:10px 0"><button class="btn small ghost" onclick="delLibPl('${id}', ${esc(JSON.stringify(d.name))})">Delete playlist</button></div>
-    <div class="box">${d.songs.map((x, i) => `<div class="trk"><div class="rowline can${pq[pi]?.nd_id === x.id ? " now" : ""}" onclick="playLibPl('${id}', false, ${i})">
+    ${d.songs.length ? `<div class="pl-play"><button class="btn" onclick="playLibPl('${id}', false, 0, ${!!smart})">${PP_PLAY.replace(/24/g, "18")} Play</button>
+      <button class="btn ghost" onclick="playLibPl('${id}', true, 0, ${!!smart})">${icon("shuffle", 18)} Shuffle</button>
+      ${smart && !["liked", "repeat", "fresh"].includes(id) ? `<button class="btn ghost" onclick="openLibPl('${id}', true)">New batch</button>` : ""}</div>` : ""}
+    ${smart ? "" : `<div class="chips" style="margin:10px 0"><button class="btn small ghost" onclick="delLibPl('${id}', ${esc(JSON.stringify(d.name))})">Delete playlist</button></div>`}
+    <div class="box">${d.songs.map((x, i) => `<div class="trk"><div class="rowline can" data-sid="${x.id}" onclick="if (!event.target.closest('button')) playLibPl('${id}', false, ${i}, ${!!smart})">
       ${artHTML(libSong(x), "q-art")}<div class="meta"><b>${esc(x.title)}</b> <span class="muted">${esc(x.artist)}</span></div>
-      <span class="muted small">${mmss(x.duration)}</span></div></div>`).join("") || '<div class="empty">Empty playlist</div>'}</div>`);
+      <span class="muted small">${mmss(x.duration)}</span>${heart(libSong(x))}</div></div>`).join("") || '<div class="empty">Empty playlist</div>'}</div>`);
+  markPlaying();
 }
 async function delLibPl(id, name) {
   if (!confirm(`Delete the playlist “${name}”? Its songs stay in your library.`)) return;
@@ -1063,7 +1081,7 @@ async function playPl(id, shuffle, btn) {     // play a playlist straight away (
   const items = rows.filter(t => t.nd_id).map(plItem);
   if (!items.length) return toast("None of these songs are downloaded yet");
   if (shuffle) for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
-  playList(items, 0);
+  playList(items, 0, {id, name: pls.find(p => p.id === id)?.name || "Playlist"});
   const skipped = rows.length - items.length;
   toast(`${shuffle ? "Shuffling" : "Playing"} ${plural(items.length, "song")}${skipped ? ` · ${skipped} not downloaded yet` : ""}`);
 }
@@ -1072,8 +1090,7 @@ function playPlRow(id, key) {
   if (!t) return;
   if (!t.nd_id) return toast(t.state === "missing" ? "This file is missing from the server" : "Not downloaded yet");
   const items = rows.filter(r => r.nd_id).map(plItem);
-  playList(items, items.findIndex(x => x.nd_id === t.nd_id));
-  setTimeout(() => { if (npl === id && $("#sheet").classList.contains("open") && !npOpen()) openPl(id); }, 300);
+  playList(items, items.findIndex(x => x.nd_id === t.nd_id), {id, name: pls.find(p => p.id === id)?.name || "Playlist"});
 }
 async function plRemove(id, key, del) {
   if (del && !confirm("Remove it from the playlist and delete the file from the server? (Kept if another playlist uses it.)")) return;
@@ -1314,7 +1331,9 @@ async function loadForYou() {
   const all = [...fy.shelves.flatMap(s => s.items), ...(fy.weekly?.songs || [])];
   all.forEach(it => fyItems[it.key] = it);
   const w = fy.weekly;
-  let h = `<h2>Your recipes</h2><div class="shelf rshelf">${rc.recipes.map(recipeCard).join("")}
+  const sm = await smartMixes();
+  const madeFor = sm.length ? `<h2>Made for you</h2><div class="shelf">${sm.map(smartTile).join("")}</div>` : "";
+  let h = madeFor + `<h2>Your recipes</h2><div class="shelf rshelf">${rc.recipes.map(recipeCard).join("")}
     <div class="rcard new" onclick="newRecipe()"><div class="rc-top"><span class="rc-emoji">＋</span></div><div class="t">New recipe</div>
     <div class="s">Pick the ingredients: new artists, charts, a genre, deep cuts…</div></div></div>`;
   h += `<h2>Explore a sound</h2><div class="seg" id="ex-pop">${[["hits","Hits"],["mix","Mix"],["gems","Hidden gems"]].map(([k, t]) =>
@@ -1368,7 +1387,7 @@ function songList(songs, key, withFb) {
   return `<div class="box" style="margin-top:10px">${songs.map((it, i) => `<div class="trk rowline">
       ${it.cover ? `<img class="cover" style="width:44px;height:44px" src="${esc(it.cover)}" alt="" loading="lazy">` : `<div class="cover sm">${ph(it)}</div>`}
       <div class="meta"><b>${esc(it.title)}</b> <span class="muted">${esc(it.artist)}</span><div class="muted">${esc(it.why || "")}</div></div>
-      ${it.deezer_id || it.nd_id ? `<button class="icon" onclick="playList(LISTS['${key}'], ${i})">▶</button>` : ""}
+      ${heart(it)}${it.deezer_id || it.nd_id ? `<button class="icon" onclick="playList(LISTS['${key}'], ${i})">▶</button>` : ""}
       ${withFb ? `<button class="icon" onclick="fb('${esc(it.key)}',true,this)">👍</button><button class="icon" onclick="fb('${esc(it.key)}',false,this)">👎</button>`
                : `<button class="icon" title="Download it" onclick="getSong('${key}', ${i}, this)">⤓</button>`}</div>`).join("")}</div>`;
 }
@@ -1506,7 +1525,8 @@ async function saveRecipe(btn) {
 let pq = [], pi = 0, errRun = 0;
 function playKey(k) { const it = fyItems[k]; const sh = fy.shelves.find(s => s.items.includes(it)); const list = sh ? sh.items : [it]; playList(list, list.indexOf(it)); }
 function playFrom(list, i) { const src = list === "lib" ? lastLibrary : list === "rel" ? relatedList : lastCatalog; playList(src, i); }
-function playList(list, start = 0) {
+function playList(list, start = 0, src = null) {
+  nowSrc = src;
   pq = list.filter(x => x.deezer_id || x.nd_id);
   pi = Math.max(0, pq.indexOf(list[start]));
   playAt();
@@ -1558,6 +1578,66 @@ function syncLyrics() {
   box.querySelectorAll("p").forEach(p => p.classList.toggle("on", +p.dataset.i === i));
   const cur = box.querySelector("p.on"); if (cur) box.scrollTo({top: cur.offsetTop - box.clientHeight / 3, behavior: "smooth"});
 }
+/* ---------- likes: a heart on every song; "not for me" keeps a song out of Cook and For You ---------- */
+const LIKES = {liked: new Set(), disliked: new Set()}, LIKEABLE = {};
+const HEART = on => `<svg viewBox="0 0 24 24" width="20" height="20" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.600-7.5 10.200-7.5 10.200z"/></svg>`;
+async function loadLikes() { try { const r = await api("/api/likes"); LIKES.liked = new Set(r.liked); LIKES.disliked = new Set(r.disliked); paintLikes(); } catch (e) {} }
+function heart(it, cls = "") {                 // the button; works for library and internet songs
+  const id = it.nd_id || it.deezer_id ? qid(it) : ""; if (!id) return "";
+  LIKEABLE[id] = {nd_id: it.nd_id || "", deezer_id: it.nd_id ? "" : it.deezer_id, artist: it.artist, title: it.title};
+  const on = LIKES.liked.has(id) || (it.starred && !LIKES.liked.size && !LIKES.disliked.has(id));
+  return `<button class="icon heart ${cls}${on ? " on" : ""}" data-like="${id}" onclick="event.stopPropagation(); toggleLike('${id}')" aria-label="${on ? "Unlike" : "Like"}" aria-pressed="${on}" title="${on ? "Unlike" : "Like"}">${HEART(on)}</button>`;
+}
+function paintLikes() {
+  document.querySelectorAll("[data-like]").forEach(b => { const on = LIKES.liked.has(b.dataset.like);
+    if (b.classList.contains("on") !== on) { b.classList.toggle("on", on); b.innerHTML = HEART(on); b.setAttribute("aria-pressed", on); b.title = on ? "Unlike" : "Like"; b.setAttribute("aria-label", b.title); } });
+}
+async function setLike(id, value) {
+  const it = LIKEABLE[id]; if (!it) return;
+  const was = {l: LIKES.liked.has(id), d: LIKES.disliked.has(id)};
+  LIKES.liked.delete(id); LIKES.disliked.delete(id);
+  if (value > 0) LIKES.liked.add(id); if (value < 0) LIKES.disliked.add(id);
+  paintLikes();
+  try { await api("/api/like", {method: "POST", body: JSON.stringify({...it, value})}); homeLib = null; return true; }
+  catch (e) { LIKES.liked.delete(id); LIKES.disliked.delete(id); if (was.l) LIKES.liked.add(id); if (was.d) LIKES.disliked.add(id); paintLikes(); toast(e.message); return false; }
+}
+async function toggleLike(id) {
+  const on = !LIKES.liked.has(id);
+  const b = document.querySelector(`[data-like="${id}"]`); if (on && b) { b.classList.add("pop"); setTimeout(() => b.classList.remove("pop"), 450); }
+  if (await setLike(id, on ? 1 : 0)) toast(on ? "Liked · you'll hear more like it" : "Removed from your liked songs");
+}
+async function notForMe(it) {                  // skip it now, and keep it out of Cook, smart mixes and For You
+  it = it || pq[pi]; if (!it) return; const id = qid(it);
+  LIKEABLE[id] = {nd_id: it.nd_id || "", deezer_id: it.nd_id ? "" : it.deezer_id, artist: it.artist, title: it.title};
+  if (!await setLike(id, -1)) return;
+  toast("Not for you · it won't be cooked or suggested again");
+  const playing = pq[pi], cur = playing === it || (playing && qid(playing) === id);
+  pq = pq.filter(x => x === playing || qid(x) !== id); pi = Math.max(0, pq.indexOf(playing));
+  if (cur) { if (pi < pq.length - 1) { pq.splice(pi, 1); playAt(); } else advance(false); } else { saveQueue(); if (npOpen()) renderPlayer(); }
+}
+/* ---------- what's playing, shown wherever it's listed: the playlist's tile, the song's row ---------- */
+let nowSrc = null;                             // {id, name}: the playlist, album or mix the queue came from
+const EQ = `<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>`;
+function markPlaying() {
+  const it = pq[pi], p = $("#player"), on = !!it, paused = !it || p.paused;
+  document.body.classList.toggle("is-paused", paused);
+  document.querySelectorAll("[data-src]").forEach(el => el.classList.toggle("playing", on && nowSrc?.id === el.dataset.src));
+  document.querySelectorAll("[data-sid]").forEach(el => el.classList.toggle("now", on && !!it.nd_id && it.nd_id === el.dataset.sid));
+}
+function srcToggle(id, play) {                 // the tile's button: play it, or pause/resume if it's the one playing
+  if (nowSrc?.id === id && pq[pi]) return togglePlay();
+  play();
+}
+/* ---------- smart mixes: made from your library, fresh every time ---------- */
+let SMART = null;
+async function smartMixes() { if (!SMART) { try { SMART = (await api("/api/smart")).mixes; } catch (e) { SMART = []; } } return SMART; }
+function smartTile(m) {
+  const c = (m.covers || []).slice(0, 4);
+  return `<div class="tile smart" data-src="smart-${m.id}" onclick="if (!event.target.closest('button')) openLibPl('${m.id}', true)">
+    <div class="art mosaic n${Math.min(c.length, 4) < 4 ? 1 : 4}">${(c.length >= 4 ? c : c.slice(0, 1)).map(x => `<img src="${cover(x)}?s=200" alt="" loading="lazy">`).join("") || ph({artist: m.name})}
+      <button class="tplay" onclick="srcToggle('smart-${m.id}', () => playLibPl('${m.id}', false, undefined, true))" aria-label="Play ${esc(m.name)}">${PP_PLAY.replace(/24/g, "20")}${EQ}</button></div>
+    <div class="t">${esc(m.name)}</div><div class="s">${esc(m.sub)}</div></div>`;
+}
 /* Cook: a mix from one song, always in its style. Locally = your songs; Just cook = songs you don't know yet. */
 async function cookMix(kind, it) {
   it = it || pq[pi]; if (!it) return;
@@ -1586,7 +1666,7 @@ function playAt() {
   p.play().catch(() => {});
   $("#mini").classList.add("on"); miniFor(it);
   $("#mini-s").textContent = (it.nd_id ? "Loading… " : "Finding the best copy… ") + it.artist; setPP(false);
-  saveQueue();
+  saveQueue(); markPlaying();
   if (npOpen()) { renderPlayer(); if (npView === "lyrics") { npView = "next"; showLyrics(); } }
 }
 function bindPlayer(it, startAt) {
@@ -1640,6 +1720,7 @@ const IC = {
   queue: `<path d="M4 6h12M4 12h12M4 18h7"/><path d="m16 15 5 3-5 3z" fill="currentColor"/>`,
   cook: `<path d="M12 3c1 3 4 4.5 4 8a4 4 0 0 1-8 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 0-7z"/><path d="M5 21h14"/>`,
   moon: `<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>`,
+  nope: `<circle cx="12" cy="12" r="8.5"/><path d="m6.2 6.200 11.600 11.600"/>`,
   more: `<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>`,
   down: `<path d="m6 9 6 6 6-6"/>`, dl: `<path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/>`, check: `<path d="m5 12.5 4.5 4.5L19 7"/>`, x: `<path d="M6 6l12 12M18 6 6 18"/>`, up: `<path d="m6 15 6-6 6 6"/>`,
 };
@@ -1650,7 +1731,7 @@ function qTier(label) {                        // Opus needs far fewer kbps than
   return br >= (opus ? 155 : 315) ? "high" : br >= (opus ? 110 : 250) ? "ok" : "low";
 }
 const qid = it => it.nd_id ? "n" + it.nd_id : "d" + it.deezer_id;
-function setPP(paused) { $("#mini-pp").innerHTML = paused ? PP_PLAY : PP_PAUSE; $("#mini-pp").setAttribute("aria-label", paused ? "Play" : "Pause");
+function setPP(paused) { setTimeout(markPlaying, 0); $("#mini-pp").innerHTML = paused ? PP_PLAY : PP_PAUSE; $("#mini-pp").setAttribute("aria-label", paused ? "Play" : "Pause");
   const b = $("#np-pp"); if (b) { b.innerHTML = paused ? PP_PLAY.replace(/24/g, "30") : PP_PAUSE.replace(/24/g, "30"); b.setAttribute("aria-label", paused ? "Play" : "Pause"); }
   $("#np")?.classList.toggle("paused", paused); }
 function artHTML(it, cls = "") {
@@ -1663,11 +1744,11 @@ function saveQueue() {                       // the queue and where you were, so
   if (!pq.length) return store.set(qStoreKey(), null);
   const keep = ["nd_id", "deezer_id", "title", "artist", "album", "cover", "cover_big", "duration", "album_id", "artist_id", "owned"];
   const lo = Math.max(0, pi - 20);
-  store.set(qStoreKey(), {q: pq.slice(lo, pi + 200).map(x => Object.fromEntries(keep.filter(k => x[k] !== undefined).map(k => [k, x[k]]))), i: pi - lo, t: $("#player").currentTime || 0});
+  store.set(qStoreKey(), {q: pq.slice(lo, pi + 200).map(x => Object.fromEntries(keep.filter(k => x[k] !== undefined).map(k => [k, x[k]]))), i: pi - lo, t: $("#player").currentTime || 0, src: nowSrc});
 }
 function restoreQueue() {
   const s = store.get(qStoreKey(), null); if (!s || !s.q?.length) return;
-  pq = s.q; pi = Math.min(s.i, pq.length - 1); const it = pq[pi]; if (!it) return;
+  pq = s.q; pi = Math.min(s.i, pq.length - 1); nowSrc = s.src || null; const it = pq[pi]; if (!it) return;
   const p = $("#player"); p.preload = "none"; p.src = srcFor(it); bindPlayer(it, s.t || 0);
   $("#mini").classList.add("on"); miniFor(it); $("#mini-s").textContent = it.artist + " · tap play to carry on"; setPP(true);
 }
@@ -1787,10 +1868,11 @@ function renderPlayer() {
   const btn = (k, on, fn, label, extra = "") => `<button class="${on ? "on" : ""}" onclick="${fn}" aria-label="${label}" title="${label}" ${extra}>${icon(k)}${on === "one" ? "<i>1</i>" : ""}</button>`;
   setPanel(`<div class="grab"></div><div id="np" class="np${lyr ? " lyrmode" : ""}${p.paused ? " paused" : ""}">
     <div class="np-top"><button class="icon" onclick="closeSheet()" aria-label="Close">${icon("down")}</button>
-      <div class="np-from">${it._cooked ? `Keep cooking · ${esc(typeof it._cooked === "string" ? it._cooked : "same style")}` : "Now playing"}</div>
+      <div class="np-from">${it._cooked ? `Keep cooking · ${esc(typeof it._cooked === "string" ? it._cooked : "same style")}` : nowSrc?.name ? `Playing from ${esc(nowSrc.name)}` : "Now playing"}</div>
       <button class="icon" onclick="moreSheet()" aria-label="More">${icon("more")}</button></div>
     ${artHTML(it, "np-art")}
-    <div class="np-meta"><div class="t">${esc(it.title)}</div>
+    <div class="np-meta"><button class="icon nfm" onclick="notForMe()" aria-label="Not for me" title="Not for me: skip it and never cook or suggest it again">${icon("nope", 22)}</button>
+      ${heart(it, "big")}<div class="t">${esc(it.title)}</div>
       <div class="s link" onclick="closeSheet(); openArtistByName(${esc(JSON.stringify((it.artist || "").split(/,| & | x | feat/i)[0].trim()))})">${esc(it.artist)}</div>
       <div class="src-q">${src}</div></div>
     <input type="range" id="np-seek" min="0" max="100" step="0.1" value="${pc}" style="--pc:${pc}%" aria-label="Position"
@@ -1812,7 +1894,7 @@ function renderPlayer() {
       : `<div class="np-up"><div class="np-uph"><h2>Up next${up.length ? ` <span class="count">${up.length}</span>` : ""}</h2>${up.length ? `<button class="link" onclick="clearUpcoming()">Clear</button>` : ""}</div>
         ${up.length ? up.slice(0, 100).map((q, k) => { const i = pi + 1 + k; return `<div class="qrow" onclick="pi=${i}; playAt()">
           ${artHTML(q, "q-art")}<div class="meta"><div class="t">${esc(q.title)}</div><div class="s">${esc(q.artist)}</div></div>
-          ${k ? `<button class="icon sm" onclick="event.stopPropagation(); qPlayNext(${i})" aria-label="Play next" title="Play next">${icon("up", 18)}</button>` : ""}
+          ${heart(q, "sm")}${k ? `<button class="icon sm" onclick="event.stopPropagation(); qPlayNext(${i})" aria-label="Play next" title="Play next">${icon("up", 18)}</button>` : ""}
           <button class="icon sm" onclick="event.stopPropagation(); qRemove(${i})" aria-label="Remove" title="Remove">${icon("x", 18)}</button></div>`; }).join("")
           : `<div class="empty small">${keepCook !== "off" ? `Nothing queued. When this song ends Umculo keeps cooking ${keepCook === "local" ? "from your music" : "songs you don't know"} in the same style.` : "Nothing queued after this song."}</div>`}</div>`}
   </div>`);
@@ -1826,6 +1908,18 @@ async function keepIt() {
   try { const r = await api("/api/getsong", {method:"POST", body: JSON.stringify(it)}); toast(r.message + " — in your quality profile"); refreshCount(); }
   catch (e) { toast(e.message); }
 }
+new MutationObserver(() => { clearTimeout(markPlaying._t); markPlaying._t = setTimeout(markPlaying, 80); }).observe(document.body, {childList: true, subtree: true});
+(() => {                                       // touch: swipe the mini player to change song or open it; pull the player down to close
+  let x0 = 0, y0 = 0, on = null;
+  const start = (e, what) => { const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; on = what; };
+  $("#mini").addEventListener("touchstart", e => start(e, "mini"), {passive: true});
+  $("#sheet").addEventListener("touchstart", e => { if (npOpen() && $("#panel").scrollTop <= 0 && !e.target.closest("input, .lyr, .np-up")) start(e, "np"); else on = null; }, {passive: true});
+  document.addEventListener("touchend", e => {
+    if (!on) return; const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0, what = on; on = null;
+    if (what === "mini") { if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) { dx < 0 ? nextTrack() : prevTrack(); } else if (dy < -40 && Math.abs(dy) > 2 * Math.abs(dx)) openPlayer(); }
+    else if (what === "np" && dy > 110 && dy > 2 * Math.abs(dx)) closeSheet();
+  }, {passive: true});
+})();
 document.addEventListener("keydown", e => {   // computers: space plays/pauses, arrows seek, shift+arrows change song
   if (e.target.closest("input, textarea, select, [contenteditable]") || e.metaKey || e.ctrlKey || e.altKey || !pq[pi]) return;
   const p = $("#player");
@@ -2016,6 +2110,7 @@ async function whoami() {
   if (!u.is_admin) { $(".gear").style.display = "none"; }
   refreshApprovals();
   if (!pq.length) restoreQueue();
+  loadLikes();
 }
 function showLogin(setup) {
   const L = $("#login");                        // background checks keep answering "sign in first": draw the form once, never over what's being typed
@@ -2398,17 +2493,19 @@ async function renderLibPane() {
     const others = lib.filter(p => !p.path);
     head.innerHTML = `Playlists <span class="count">${pls.length + others.length}</span>`;
     const order = [...pls.filter(p => plFavs.has(p.id)), ...pls.filter(p => !plFavs.has(p.id))];
-    const row = (name, sub, cov, open, play, fav) => `<div class="plrow" onclick="if (!event.target.closest('button')) ${open}">
+    const row = (name, sub, cov, open, play, fav, sid) => `<div class="plrow" data-src="${sid}" onclick="if (!event.target.closest('button')) ${open}">
         ${cov ? artHTML({cover: cover(cov), artist: name}, "q-art") : `<div class="artbox q-art">${ph({artist: name})}</div>`}
         <div class="meta"><div class="t">${fav ? "★ " : ""}${esc(name)}</div><div class="s">${sub}</div></div>
-        ${play ? `<button class="icon plplay" onclick="${play}" aria-label="Play ${esc(name)}" title="Play">${PP_PLAY.replace(/24/g, "20")}</button>` : ""}</div>`;
-    pane.innerHTML = (order.length || others.length ? `<div class="box plrows">` +
+        ${play ? `<button class="icon plplay" onclick="srcToggle('${sid}', () => ${play})" aria-label="Play ${esc(name)}" title="Play">${PP_PLAY.replace(/24/g, "20")}${EQ}</button>` : ""}</div>`;
+    const sm = await smartMixes(); if (libTab !== "playlists") return;
+    pane.innerHTML = (sm.length ? `<div class="shelf" style="margin-bottom:12px">${sm.map(smartTile).join("")}</div>` : "") + (order.length || others.length ? `<div class="box plrows">` +
         order.map(p => { const l = byPath[p.path] || {}; const ready = l.songs ?? p.tracks;
           return row(p.name, `${plural(p.tracks, "song")}${l.duration ? " · " + fmtLen(l.duration) : ""}${ready < p.tracks ? ` · ${p.tracks - ready} not downloaded` : ""}`,
-                     l.cover, `openPl('${p.id}')`, ready ? `playPl('${p.id}', false, this)` : "", plFavs.has(p.id)); }).join("") +
-        others.map(p => row(p.name, `${plural(p.songs, "song")}${p.duration ? " · " + fmtLen(p.duration) : ""} · from a music app`, p.cover, `openLibPl('${p.id}')`, p.songs ? `playLibPl('${p.id}', false)` : "")).join("") +
+                     l.cover, `openPl('${p.id}')`, ready ? `playPl('${p.id}', false, true)` : "", plFavs.has(p.id), p.id); }).join("") +
+        others.map(p => row(p.name, `${plural(p.songs, "song")}${p.duration ? " · " + fmtLen(p.duration) : ""} · from a music app`, p.cover, `openLibPl('${p.id}')`, p.songs ? `playLibPl('${p.id}', false)` : "", false, p.id)).join("") +
         `</div>` : `<div class="empty">No playlists yet.</div>`) +
       `<button class="btn ghost" style="width:100%;margin-top:6px" onclick="show('playlists')">Import or manage playlists</button>`;
+    markPlaying();
     return;
   }
   head.innerHTML = `Mixes${libMixes ? ` <span class="count">${libMixes.length}</span>` : ""}`;
@@ -2459,9 +2556,10 @@ async function openLibAlbum(id) {
       ${canDelete() ? `<button class="btn small ghost" onclick="libDelete('album','${a.id}',${esc(JSON.stringify(a.name))})">Delete album</button>` : ""}</div>
     <div class="muted" style="margin:8px 4px">${canDelete() ? "Swipe a song left to delete it." : ""}</div>
     <div class="box">${items.map((t, i) => `<div class="sw" data-key="${t.id}"><div class="sw-act">${canDelete() ? `<button class="sa del" onclick="libDelete('song','${t.id}',${esc(JSON.stringify(t.title))})">Delete</button>` : ""}</div>
-      <div class="sw-front trk rowline"><span class="tno">${t.track || i + 1}</span><div class="meta" onclick="playList(LISTS.libalbum, ${i})"><b>${esc(t.title)}</b>
+      <div class="sw-front trk rowline" data-sid="${t.id}"><span class="tno">${t.track || i + 1}</span><div class="meta" onclick="playList(LISTS.libalbum, ${i}, {id: 'al-${a.id}', name: ${esc(JSON.stringify(a.name))}})"><b>${esc(t.title)}</b>
         <div class="muted">${t.artist !== a.artist ? esc(t.artist) + " · " : ""}${mmss(t.duration)}${t.plays ? " · " + plural(t.plays, "play") : ""}</div></div>
-        <span class="q ${t.tier}">${esc(t.quality)}</span>${canDelete() ? `<button class="icon more" onclick="swToggle(this)">⋯</button>` : ""}</div></div>`).join("")}</div>`);
+        <span class="q ${t.tier}">${esc(t.quality)}</span>${heart({...t, nd_id: t.id})}${canDelete() ? `<button class="icon more" onclick="swToggle(this)">⋯</button>` : ""}</div></div>`).join("")}</div>`);
+  markPlaying();
 }
 let wrapP = "month", wrapB = 0;
 async function openWrapped(period, back) {

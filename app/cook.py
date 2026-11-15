@@ -156,6 +156,10 @@ def cook_local(u, seed, n=50):
     if not r:
         return [], None
     rows = lib_rows(u)
+    banned = core.likes.disliked_keys()               # "not for me" songs never get cooked
+    if banned:
+        rows = [x for x in rows if x["id"] == r["id"] or core.song_key(x["artist"], x["title"]) not in banned]
+    hearts = set(core.likes.starred_ids(u))            # songs you gave a heart come up more
     by_artist = artist_styles(rows)
     fam, cat = song_style(r, by_artist)
     if not fam:                                   # nothing tagged: ask the catalogue what this artist plays
@@ -181,9 +185,10 @@ def cook_local(u, seed, n=50):
         elif is_mine or is_close:                # no style known at all: stay with the artist's circle
             close.append(x)
     era = lambda x: 0 if year and x["year"] and abs(x["year"] - year) <= 6 else 1
-    random.shuffle(same)
+    lucky = lambda x: random.random() - (0.4 if x["id"] in hearts else 0)
+    same.sort(key=lucky)
     same.sort(key=era)
-    random.shuffle(close)
+    close.sort(key=lucky)
     picked, seen = [r], {r["id"]}
 
     def add(lst, limit):
