@@ -661,8 +661,8 @@ async function renderSearchHome() {
   if (!homeLib) { try { homeLib = await api("/api/lib"); } catch (e) { homeLib = {}; } }
   const back = (homeLib.recent || []).slice(0, 10), top = (homeLib.frequent || []).filter(a => !back.some(b => b.id === a.id)).slice(0, 10);
   const sm = await smartMixes();
-  if (sm.length) h = `<h2>Made for you</h2><div class="shelf">${sm.map(smartTile).join("")}</div>` + (r.length || !back.length ? h : "");
-  if (back.length) h = `<h2>Jump back in</h2><div class="shelf">${back.map(albumCard).join("")}</div>` + (r.length ? h : "");
+  if (back.length || sm.length) h = (sm.length ? `<h2>Made for you</h2><div class="shelf">${sm.map(smartTile).join("")}</div>` : "") +
+    (back.length ? `<h2>Jump back in</h2><div class="shelf">${back.map(albumCard).join("")}</div>` : "") + (r.length ? h : "");
   if (top.length) h += `<h2>Your favourites</h2><div class="shelf">${top.map(albumCard).join("")}</div>`;
   if (!rc) { try { const x = await fetch("/api/recipes"); if (x.ok) rc = await x.json(); } catch (e) {} }
   const g = (rc?.genres || []).slice(0, 16);
@@ -1634,7 +1634,7 @@ async function smartMixes() { if (!SMART) { try { SMART = (await api("/api/smart
 function smartTile(m) {
   const c = (m.covers || []).slice(0, 4);
   return `<div class="tile smart" data-src="smart-${m.id}" onclick="if (!event.target.closest('button')) openLibPl('${m.id}', true)">
-    <div class="art mosaic n${Math.min(c.length, 4) < 4 ? 1 : 4}">${(c.length >= 4 ? c : c.slice(0, 1)).map(x => `<img src="${cover(x)}?s=200" alt="" loading="lazy">`).join("") || ph({artist: m.name})}
+    <div class="art mosaic n${Math.min(c.length, 4) < 4 ? 1 : 4}">${(c.length >= 4 ? c : c.slice(0, 1)).map(x => `<img src="${cover(x)}" alt="" loading="lazy" onerror="this.outerHTML=ph(${esc(JSON.stringify({artist: m.name}))})">`).join("") || ph({artist: m.name})}
       <button class="tplay" onclick="srcToggle('smart-${m.id}', () => playLibPl('${m.id}', false, undefined, true))" aria-label="Play ${esc(m.name)}">${PP_PLAY.replace(/24/g, "20")}${EQ}</button></div>
     <div class="t">${esc(m.name)}</div><div class="s">${esc(m.sub)}</div></div>`;
 }
@@ -2485,8 +2485,13 @@ async function renderLibPane() {
     head.innerHTML = `Playlists${pls.length ? ` <span class="count">${pls.length}</span>` : ""}`;
     if (!pls.length) pane.innerHTML = `<div class="empty"><span class="spin"></span></div>`;
     let lib = [];
-    try { const [r, f, l] = await Promise.all([api("/api/pl"), api("/api/pl/favs").catch(() => ({favs: []})), api("/api/lib/playlists").catch(() => ({playlists: []}))]);
-          pls = r.playlists; plFavs = new Set(f.favs); lib = l.playlists; }
+    try { const slow = api("/api/pl");
+          const [f, l] = await Promise.all([api("/api/pl/favs").catch(() => ({favs: []})), api("/api/lib/playlists").catch(() => ({playlists: []}))]);
+          plFavs = new Set(f.favs); lib = l.playlists;
+          const quick = await Promise.race([slow, new Promise(r => setTimeout(r, 1200, null))]);
+          if (quick) pls = quick.playlists;
+          else { if (!pls.length) pls = lib.filter(p => p.path).map(p => ({id: "", lid: p.id, name: p.name, path: p.path, tracks: p.songs}));
+                 slow.then(r => { pls = r.playlists; if (libTab === "playlists") renderLibPane(); }).catch(() => {}); } }
     catch (e) { return pane.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
     if (libTab !== "playlists") return;
     const byPath = Object.fromEntries(lib.filter(p => p.path).map(p => [p.path, p]));
@@ -2501,7 +2506,7 @@ async function renderLibPane() {
     pane.innerHTML = (sm.length ? `<div class="shelf" style="margin-bottom:12px">${sm.map(smartTile).join("")}</div>` : "") + (order.length || others.length ? `<div class="box plrows">` +
         order.map(p => { const l = byPath[p.path] || {}; const ready = l.songs ?? p.tracks;
           return row(p.name, `${plural(p.tracks, "song")}${l.duration ? " · " + fmtLen(l.duration) : ""}${ready < p.tracks ? ` · ${p.tracks - ready} not downloaded` : ""}`,
-                     l.cover, `openPl('${p.id}')`, ready ? `playPl('${p.id}', false, true)` : "", plFavs.has(p.id), p.id); }).join("") +
+                     l.cover, p.id ? `openPl('${p.id}')` : `openLibPl('${p.lid}')`, !ready ? "" : p.id ? `playPl('${p.id}', false, true)` : `playLibPl('${p.lid}', false)`, plFavs.has(p.id), p.id || p.lid); }).join("") +
         others.map(p => row(p.name, `${plural(p.songs, "song")}${p.duration ? " · " + fmtLen(p.duration) : ""} · from a music app`, p.cover, `openLibPl('${p.id}')`, p.songs ? `playLibPl('${p.id}', false)` : "", false, p.id)).join("") +
         `</div>` : `<div class="empty">No playlists yet.</div>`) +
       `<button class="btn ghost" style="width:100%;margin-top:6px" onclick="show('playlists')">Import or manage playlists</button>`;
