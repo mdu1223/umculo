@@ -157,10 +157,11 @@ def apply(p=None):
         for d, _dirs, _names in sorted(os.walk(root), key=lambda x: -len(x[0])):     # empty old folders go
             if d != root and not os.path.basename(d).startswith(".") and not os.listdir(d):
                 os.rmdir(d)
-        try:
-            core.links.moved_files(moved)
-        except Exception:  # noqa: BLE001
-            pass
+        for fn in (core.links.moved_files, core.video.moved):     # found tracklists and saved videos follow the files
+            try:
+                fn(moved)
+            except Exception as ex:  # noqa: BLE001
+                core.log("tidy mixes: couldn't update", fn.__module__, ex)
         if moved or done:
             core.log(f"tidy mixes: {len(p['moves'])} moved, {len(p['duplicates'])} duplicates set aside, {done} tagged")
             core.request_scan()

@@ -12,7 +12,7 @@
 
 - **A music server for your apps.** Built-in Subsonic / OpenSubsonic API, so Subsonic apps like Arpeggi and Amperfy work with it. (A Jellyfin-style API is there too, still experimental.)
 - **A web player** that works on phones and computers: search, library (artists, playlists and DJ mixes), synced lyrics, shuffle and repeat, an editable queue that survives a reload, a sleep timer, keyboard shortcuts, lock-screen controls, a yearly "your listening" recap, light and dark mode.
-- **Cook.** Start a mix from any song and it stays in that song's style. *Cook locally* uses your own music; *Just cook* finds songs you don't know yet. With *keep cooking* on, the music never just stops at the end of the queue.
+- **Cook.** Start a mix from any song and it stays in that song's style. *Cook locally* uses your own music; *Just cook* finds songs you don't know yet. With *keep cooking* on, the music never just stops at the end of the queue, and it keeps to the style of what you were playing (a playlist called "Kwaito Classics" keeps cooking kwaito).
 - **Likes that matter.** A heart on every song: liked songs become favourites in your music apps, shape For You and come up more in Cook. *Not for me* keeps a song out of every mix and suggestion.
 - **Made for you.** Smart mixes built from your own library: Liked songs, On repeat, Fresh in, Rediscover, Never played, and one per style you own.
 - **Long DJ mixes and episodes** pick up where you left off, and can play faster.
@@ -20,6 +20,7 @@
 - **Playlists that stay in sync.** Paste a Spotify or Apple Music playlist link and Umculo builds it from your library and your sources, then keeps it up to date.
 - **For You.** Weekly mix, "because you play…", rediscover old favourites, follow artists and get their new releases.
 - **DJ mixes and podcasts.** Subscribe to shows, and Umculo can recognise the songs in a mix.
+- **Watch the mix.** Turn on *Video* while a DJ mix plays and the set's video plays along, in step with the audio. Tick *Also save the video* when you download a mix or subscribe to a show to keep the video too (up to 720p, next to the mix in a hidden `.video` folder).
 - **Tidy-up tools.** One folder per artist, duplicates removed, cover art and lyrics added.
 - **Family accounts.** Everyone gets their own library, playlists and history. You choose what each person can do, and they can ask you for songs.
 - **Safe to put online.** 2-step sign-in, app passwords for music apps, "only devices I approve", sign-in lockout, security headers. See [SECURITY.md](SECURITY.md).

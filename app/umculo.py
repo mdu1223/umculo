@@ -51,6 +51,7 @@ import selftest  # noqa: E402
 import migrate  # noqa: E402
 import listening  # noqa: E402
 import importers  # noqa: E402
+import video  # noqa: E402
 import security  # noqa: E402
 import jellyfin  # noqa: E402
 import cook  # noqa: E402
@@ -58,7 +59,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "2.5.1"
+VERSION = "2.6.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2381,6 +2382,8 @@ class Handler(BaseHTTPRequestHandler):
                 elif builtin():
                     POOL.submit(server.warm, who, sid, subsonic.CFG["stream_quality"], qs.get("can", [""])[0], server.network())
                 return self.send_json({"ok": True})
+            if u.path.startswith("/api/video/") and builtin() and video.handle_get(self, u.path):   # a mix's video
+                return None
             if u.path.startswith("/api/stream/"):             # full song from the internet, for this page
                 did = u.path.rsplit("/", 1)[-1]
                 t0, cached = time.time(), bool(subsonic.src_path(did))
@@ -2554,7 +2557,7 @@ class Handler(BaseHTTPRequestHandler):
                 tr_set(job, tr, state="downloading", message="Starting your choice")
                 POOL.submit(manual_pick, job, tr, chk["target"], cand)
                 return self.send_json({"ok": True})
-            out = mixtidy.handle("POST", self.path.split("?")[0]) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
+            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0]) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
             if out is None:
                 out = listening.handle_post(self.path.split("?")[0], b)
             if out is None:
@@ -2706,6 +2709,7 @@ def main():
     cook.init(sys.modules[__name__])
     mixtidy.init(sys.modules[__name__])
     likes.init(sys.modules[__name__])
+    video.init(sys.modules[__name__])
     load_jobs()
     threading.Thread(target=scan_loop, daemon=True).start()
     threading.Thread(target=retry_loop, daemon=True).start()

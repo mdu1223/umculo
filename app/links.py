@@ -288,15 +288,15 @@ def find_entry(show, entry_id):
 
 
 # --------------------------------------------------------------------------- downloading
-def candidate_for(show, e):
+def candidate_for(show, e, video=False):
     long = (e.get("duration") or 0) > core.CONFIG["mix_seconds"]
     folder = core.mixtidy.show_name(show["title"] if show.get("podcast") else (show.get("author") or show["title"] or "Mixes"))
     return {"source": "link", "exact": True, "score": 0, "quality": e.get("quality") or "Best available",
             "tier": e.get("tier") or "unknown", "eta": "", "name": e["title"], "detail": show.get("author") or show["title"],
             "duration": e.get("duration"), "podcast": bool(show.get("podcast")), "folder": folder,
             "filename": f"{e['date']} - {e['title']}" if (show.get("podcast") and e.get("date")) else "",
-            "long": long, "ref": {"url": e.get("media") or e.get("page"), "direct": bool(e.get("media")),
-                                  "format": e.get("format") or ""}}
+            "long": long, "video": bool(video), "page": e.get("page") or "",
+            "ref": {"url": e.get("media") or e.get("page"), "direct": bool(e.get("media")), "format": e.get("format") or ""}}
 
 
 def target_for(show, e):
@@ -336,12 +336,12 @@ def import_show(show, name=""):
     return core.new_job(name, "import", os.path.join(core.CONFIG["playlists"], name + ".m3u8"), tracks)
 
 
-def get_all(show):
-    return [get_entry(show, e) for e in show["entries"][:300]]
+def get_all(show, video=False):
+    return [get_entry(show, e, video) for e in show["entries"][:300]]
 
 
-def get_entry(show, e):
-    return core.start_request(target_for(show, e), candidate_for(show, e))
+def get_entry(show, e, video=False):
+    return core.start_request(target_for(show, e), candidate_for(show, e, video))
 
 
 def dl_link(req):
@@ -395,6 +395,9 @@ def after_filing(req, final):
     """Called by run_request once a link download is in the library."""
     tier, label = core.file_quality(final)
     req["candidate"].update(quality=label, tier=tier)
+    c = req["candidate"]
+    if c.get("page") and (c.get("long") or c.get("video") or core.within(final, core.CONFIG["mixes"])):
+        core.video.record(final, c["page"], bool(c.get("video")))      # watch it later; saved now if asked
 
 
 # --------------------------------------------------------------------------- subscriptions
@@ -404,12 +407,15 @@ def save_subs():
     core._save_json("subscriptions.json", data)
 
 
-def subscribe(show, latest=False, owner=None):
+def subscribe(show, latest=False, owner=None, video=False):
     owner = owner or core.users.me_key()
     url = show.get("feed") or (show.get("channel_url") if show["kind"] == "single" else show["url"])
     with LOCK:
         for s in SUBS.values():
             if s["url"] == url and (s.get("owner") or "admin") == owner:
+                if video and not s.get("video"):
+                    s["video"] = True
+                    save_subs()
                 return s["id"]
     if show["kind"] == "single" and show.get("channel_url"):         # subscribed from one upload: follow the channel
         show = resolve_ytdlp(show["channel_url"])
@@ -419,7 +425,8 @@ def subscribe(show, latest=False, owner=None):
     sub = {"id": sid, "title": show["title"], "author": show.get("author", ""), "cover": show.get("cover", ""),
            "url": url, "feed": show.get("feed", ""), "podcast": bool(show.get("podcast")),
            "seen": [e["id"] for e in ents[1:]] if latest else [e["id"] for e in ents],
-           "created": time.time(), "last_check": time.time(), "last_new": None, "error": "", "fetched": 0, "owner": owner}
+           "created": time.time(), "last_check": time.time(), "last_new": None, "error": "", "fetched": 0, "owner": owner,
+           "video": bool(video)}
     with LOCK:
         SUBS[sid] = sub
     save_subs()
@@ -431,13 +438,16 @@ def subscribe(show, latest=False, owner=None):
 PENDING = {}                   # url -> title, subscriptions being set up in the background
 
 
-def subscribe_async(show, latest=False):
+def subscribe_async(show, latest=False, video=False):
     """Subscribing can take a while (a whole channel has to be read): answer at once, work behind."""
     url = show.get("feed") or (show.get("channel_url") if show["kind"] == "single" else show["url"])
     owner = core.users.me_key()
     with LOCK:
         for s in SUBS.values():
             if s["url"] in (url, show.get("url")) and (s.get("owner") or "admin") == owner:
+                if video and not s.get("video"):
+                    s["video"] = True
+                    threading.Thread(target=save_subs, daemon=True).start()
                 return {"id": s["id"], "state": "done"}
         if (owner, url) in PENDING:
             return {"id": None, "state": "pending"}
@@ -446,7 +456,7 @@ def subscribe_async(show, latest=False):
 
     def run():
         try:
-            subscribe(show, latest, owner)
+            subscribe(show, latest, owner, video)
         except Exception as e:  # noqa: BLE001
             log("subscribe failed:", show["title"], e)
         finally:
@@ -468,12 +478,12 @@ def check_sub(sub):
             show["kind"] = "show"
         new = [e for e in show["entries"] if e["id"] not in set(sub["seen"])]
         for e in new[:CFG["sub_max_new"]]:
-            sh = {**show, "title": sub["title"], "podcast": sub["podcast"] or show.get("podcast")}
+            sh = {**show, "title": sub["title"], "podcast": sub["podcast"] or show.get("podcast"), "video": bool(sub.get("video"))}
             long = (e.get("duration") or 0) > core.CONFIG["mix_seconds"] or sh["podcast"]
             if CFG["auto_find"] and long:
                 start_find(sh, e, keep=True, auto=True, owner=sub.get("owner") or "admin")   # downloads it, lists its songs
             else:
-                get_entry(sh, e)
+                get_entry(sh, e, sh["video"])
             sub["fetched"] = sub.get("fetched", 0) + 1
             sub["last_new"] = time.time()
             log("subscription", sub["title"], "new:", e["title"])
@@ -608,7 +618,7 @@ def start_find(show, e, keep=False, auto=False, owner=None):
                     f["keep"] = True
                 return f["id"]
     fid = uuid.uuid4().hex[:12]
-    f = {"id": fid, "title": e["title"], "show": show["title"], "cover": e.get("cover") or show.get("cover", ""),
+    f = {"id": fid, "title": e["title"], "show": show["title"], "video": bool(show.get("video")), "cover": e.get("cover") or show.get("cover", ""),
          "duration": e.get("duration") or 0, "state": "queued", "progress": 0, "message": "Waiting its turn",
          "tracks": [], "created": time.time(), "keep": keep, "auto": auto, "show_data": {k: show.get(k) for k in
          ("kind", "podcast", "title", "author", "cover", "feed", "url")}, "entry": e, "owner": owner}
@@ -700,6 +710,8 @@ def run_find(f):
             core.request_scan()
             f["file"] = final
             path = ""
+            if e.get("page"):
+                core.video.record(final, e["page"], bool(f.get("video")))
         how = ("audio recognition" if heard else "") + (" and " if heard and listed else "") + ("the published tracklist" if listed else "")
         msg = (f"Found {core.plural(len(tracks), 'song')}" + (f" using {how}" if how else "") if tracks else
                ("No songs recognised" if rec else "No tracklist published, and audio recognition isn't installed"))
@@ -788,7 +800,7 @@ def get_found(fid, indexes, name=""):
 # --------------------------------------------------------------------------- web routes
 def view_sub(s):
     return {k: s.get(k) for k in ("id", "title", "author", "cover", "url", "podcast", "last_check", "last_new",
-                                  "error", "fetched", "created")}
+                                  "error", "fetched", "created", "video")}
 
 
 def view_find(f, full=False):
@@ -823,21 +835,27 @@ def handle_post(path, b):
         return resolve(b.get("url", ""))
     if path == "/api/link/get":
         show = get_show(b.get("show", ""))
-        return {"id": get_entry(show, find_entry(show, b.get("entry", "")))}
+        return {"id": get_entry(show, find_entry(show, b.get("entry", "")), bool(b.get("video")))}
     if path == "/api/link/find":
         show = get_show(b.get("show", ""))
+        if b.get("video"):
+            show = {**show, "video": True}
         return {"id": start_find(show, find_entry(show, b.get("entry", "")), bool(b.get("keep")))}
     if path == "/api/link/import":
         return {"job": import_show(get_show(b.get("show", "")), b.get("name", ""))}
     if path == "/api/link/getall":
-        return {"ids": get_all(get_show(b.get("show", "")))}
+        return {"ids": get_all(get_show(b.get("show", "")), bool(b.get("video")))}
     if path == "/api/link/subscribe":
-        return subscribe_async(get_show(b.get("show", "")), bool(b.get("latest")))
-    m = re.match(r"^/api/subscriptions/([0-9a-f]+)/(check|remove)$", path)
+        return subscribe_async(get_show(b.get("show", "")), bool(b.get("latest")), bool(b.get("video")))
+    m = re.match(r"^/api/subscriptions/([0-9a-f]+)/(check|remove|video)$", path)
     if m:
         s = SUBS.get(m.group(1))
         if not core.users.mine(s):
             raise LookupError("unknown subscription")
+        if m.group(2) == "video":                     # new mixes come with their video too (or stop)
+            s["video"] = bool(b.get("on"))
+            save_subs()
+            return {"ok": True, "video": s["video"]}
         if m.group(2) == "check":
             run_sub(s)
         else:

@@ -169,6 +169,16 @@ header{padding-top:calc(14px + env(safe-area-inset-top))}
   transition:transform .45s cubic-bezier(.2,.9,.3,1.2),box-shadow .45s;will-change:transform}
 .np.paused .np-art{transform:scale(.88);box-shadow:0 8px 24px rgba(0,0,0,.25)}
 .np-art .ph{font-size:64px}
+.np-art.vid{width:min(94vw,640px);aspect-ratio:16/9;background:#000;border-radius:16px}
+.np.paused .np-art.vid{transform:none}
+.np-video{width:100%;height:100%;display:block;object-fit:contain;background:#000}
+.vid-fs{position:absolute;right:8px;bottom:8px;border:0;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,.55);color:#fff;cursor:pointer}
+.vid-row{display:flex;justify-content:center;gap:8px;margin:-8px 0 10px}
+.vid-tg{border:0;display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:99px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;
+  background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink)}
+.vid-tg.on{background:var(--accent);color:var(--accent-ink)}
+.vid-tg.ghost{background:none;color:var(--quiet)}
+.np.lyrmode .vid-row{display:none}
 .np-meta .t{font-size:22px;font-weight:800;letter-spacing:-.01em;white-space:normal;line-height:1.2}
 .np-meta .s{font-size:16px;margin-top:3px;white-space:normal;color:var(--accent);cursor:pointer;font-weight:600}
 .np .src-q{font-size:12px;color:var(--quiet);margin-top:8px;min-height:20px}
@@ -1199,6 +1209,7 @@ function renderLink() {
       <div class="box" style="margin-top:10px"><div class="t">Subscribe${s.kind === "single" ? " to " + esc(s.author || "this channel") : ""}</div>
       <div class="muted">New ${s.podcast ? "episodes" : "uploads"} download by themselves.</div>
       <label class="opt"><input type="checkbox" id="sub-latest"> Also get the latest one now</label>
+      ${s.podcast ? "" : `<label class="opt"><input type="checkbox" id="sub-video" ${store.get("umc_vidsave", false) ? "checked" : ""}> Save the video of each new mix too</label>`}
       <button class="btn small" onclick="linkSub()">Subscribe</button></div>` : "";
   setPanel(`<div class="grab"></div>
     <div class="hero">${s.cover ? `<img src="${esc(s.cover)}" alt="">` : ""}<div class="meta">
@@ -1212,18 +1223,20 @@ function renderLink() {
       <div class="chips"><button class="btn small" onclick="linkImport()">Get all as a playlist</button>
       <button class="btn small ghost" onclick="linkGetAll()">Download all as-is</button></div></div>` : ""}
     <label class="opt"><input type="checkbox" id="find-keep"> When finding songs, also keep the mix itself</label>
+    ${s.podcast ? "" : `<label class="opt"><input type="checkbox" id="link-video" ${store.get("umc_vidsave", false) ? "checked" : ""} onchange="store.set('umc_vidsave', this.checked)"> Also save the video <span class="muted">(mixes; up to 720p, about 1 GB an hour)</span></label>`}
     ${focus ? `<h2>${s.kind === "single" ? "This upload" : "The episode you linked"}</h2><div class="box">${epRow(focus)}</div>` : ""}
     ${rest.length ? `<h2>${focus ? "More" : s.podcast ? "Episodes" : "Uploads"}</h2><div class="box">${rest.slice(0, 60).map(epRow).join("")}</div>` : ""}`);
 }
+const linkVideo = () => !!$("#link-video")?.checked;
 async function linkGet(n) {
   const id = linkShow.entries[n].id;
-  try { await api("/api/link/get", {method:"POST", body: JSON.stringify({show: linkShow.id, entry: id})}); toast("Downloading — follow it under Queue"); refreshCount(); }
+  try { await api("/api/link/get", {method:"POST", body: JSON.stringify({show: linkShow.id, entry: id, video: linkVideo()})}); toast("Downloading — follow it under Queue"); refreshCount(); }
   catch (e) { toast(e.message); }
 }
 async function linkFind(n) {
   const id = linkShow.entries[n].id;
   const keep = $("#find-keep")?.checked || false;
-  try { const r = await api("/api/link/find", {method:"POST", body: JSON.stringify({show: linkShow.id, entry: id, keep})});
+  try { const r = await api("/api/link/find", {method:"POST", body: JSON.stringify({show: linkShow.id, entry: id, keep, video: keep && linkVideo()})});
         toast("Song finder started"); openFind(r.id); }
   catch (e) { toast(e.message); }
 }
@@ -1234,14 +1247,14 @@ async function linkImport() {
 }
 async function linkGetAll() {
   if (!confirm(`Download all ${linkShow.entries.length} straight from this site, as they are?`)) return;
-  try { const r = await api("/api/link/getall", {method:"POST", body: JSON.stringify({show: linkShow.id})});
+  try { const r = await api("/api/link/getall", {method:"POST", body: JSON.stringify({show: linkShow.id, video: linkVideo()})});
         toast(`${plural(r.ids.length, "download")} queued — follow them under Queue`); refreshCount(); }
   catch (e) { toast(e.message); }
 }
 async function linkSub() {
   if (linkShow.subscribed) return;
   linkShow.subscribed = true; renderLink();
-  try { const r = await api("/api/link/subscribe", {method:"POST", body: JSON.stringify({show: linkShow.id, latest: $("#sub-latest")?.checked || false})});
+  try { const r = await api("/api/link/subscribe", {method:"POST", body: JSON.stringify({show: linkShow.id, latest: $("#sub-latest")?.checked || false, video: $("#sub-video")?.checked || false})});
         toast(r.state === "pending" ? "Subscribing — big channels take a moment; it shows under Mixes" : "Subscribed"); loadMixes(); }
   catch (e) { linkShow.subscribed = false; renderLink(); toast(e.message); }
 }
@@ -1262,9 +1275,15 @@ async function loadMixes() {
       <div class="meta"><div class="t">${esc(s.title)}</div>
       <div class="muted">Checked ${ago(s.last_check)} · ${s.fetched || 0} downloaded${s.last_new ? ` · last new ${ago(s.last_new)}` : ""}${s.error ? ` · <span style="color:var(--low)">${esc(s.error)}</span>` : ""}</div>
       <div class="chips" style="margin-top:6px"><button class="btn small ghost" onclick="subAction('${s.id}','check')">Check now</button>
+      ${s.podcast ? "" : `<button class="btn small ghost${s.video ? " on" : ""}" onclick="subVideo('${s.id}', ${!s.video})" title="Save the video of new mixes">${s.video ? "✓ Video" : "Audio only"}</button>`}
       <button class="btn small ghost" onclick="subAction('${s.id}','remove')">Unsubscribe</button></div></div></div>`).join("")
       : `<div class="empty">No subscriptions yet. Paste a show or channel link above and tap Subscribe.</div>`);
   if (!$("#view-mixes").hidden && (r.pending.length || r.finds.some(f => ["queued","downloading","listening"].includes(f.state)))) mixTimer = setTimeout(loadMixes, 4000);
+}
+async function subVideo(id, on) {
+  try { await api(`/api/subscriptions/${id}/video`, {method:"POST", body: JSON.stringify({on})});
+        toast(on ? "New mixes from this show come with their video" : "New mixes from this show: audio only"); loadMixes(); }
+  catch (e) { toast(e.message); }
 }
 async function subAction(id, action) {
   if (action === "remove" && !confirm("Stop downloading new episodes from this show? Episodes you already have stay.")) return;
@@ -1678,10 +1697,10 @@ function bindPlayer(it, startAt) {
     resumed = true;
     p.playbackRate = p.duration >= LONG ? store.get("umc_speed", 1) : 1;
   };
-  p.onplaying = () => { errRun = 0; $("#mini-s").textContent = it.artist + (it.q ? " · " + it.q.quality : ""); setPP(false); if (npOpen()) renderPlayer();
+  p.onplaying = () => { errRun = 0; vidSync(); $("#mini-s").textContent = it.artist + (it.q ? " · " + it.q.quality : ""); setPP(false); if (npOpen()) renderPlayer();
     if (!it.q) api(it.nd_id ? `/api/streaminfo/nd/${it.nd_id}?can=${CAN}` : `/api/streaminfo/d/${it.deezer_id}`).then(q => {
       if (!q.quality) return; it.q = q; if (pq[pi] === it) { $("#mini-s").textContent = it.artist + " · " + q.quality; if (npOpen() && npView !== "lyrics") renderPlayer(); } }).catch(() => {}); };
-  p.onpause = () => { setPP(true); saveQueue(); if (p.duration >= LONG) store.set(posKey(it), p.currentTime); };
+  p.onpause = () => { vidSync(); setPP(true); saveQueue(); if (p.duration >= LONG) store.set(posKey(it), p.currentTime); };
   p.onended = () => { if (isLong(it)) store.set(posKey(it), 0); advance(true); };
   p.onerror = () => { if (!p.src || p.src === location.href) return; errRun++; toast(errRun >= 3 ? "Several songs wouldn't play; stopped. Check the status page." : "Couldn't play " + it.title);
     $("#mini-s").textContent = "Couldn't play this one · " + it.artist; setPP(true); if (errRun < 3 && pi < pq.length - 1) nextTrack(); };
@@ -1690,7 +1709,7 @@ function bindPlayer(it, startAt) {
     if (p.currentTime > 4) warmNext();
     if (p.currentTime > 4 && keepCook !== "off" && repeatMode === "off" && pi >= pq.length - 2) cookMore();   // cook ahead, so there's no gap
     if (Date.now() - lastSave > 10000) { lastSave = Date.now(); saveQueue(); if (p.duration >= LONG) store.set(posKey(it), p.currentTime); }
-    if (npView === "lyrics") syncLyrics();
+    if (npView === "lyrics") syncLyrics(); else if (videoOn) vidSync();
     const r = $("#np-seek"); if (r && !r._drag) { r.value = pc; r.style.setProperty("--pc", pc + "%"); $("#np-cur").textContent = mmss(p.currentTime); $("#np-dur").textContent = "-" + mmss(Math.max(0, (p.duration || 0) - p.currentTime)); }
     if ("mediaSession" in navigator && p.duration && navigator.mediaSession.setPositionState) try { navigator.mediaSession.setPositionState({duration: p.duration, playbackRate: p.playbackRate, position: Math.min(p.currentTime, p.duration)}); } catch (e) {} };
   if ("mediaSession" in navigator) {
@@ -1722,6 +1741,8 @@ const IC = {
   moon: `<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>`,
   nope: `<circle cx="12" cy="12" r="8.5"/><path d="m6.2 6.200 11.600 11.600"/>`,
   more: `<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>`,
+  video: `<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10.5 5-3v9l-5-3z"/>`,
+  full: `<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>`,
   down: `<path d="m6 9 6 6 6-6"/>`, dl: `<path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/>`, check: `<path d="m5 12.5 4.5 4.5L19 7"/>`, x: `<path d="M6 6l12 12M18 6 6 18"/>`, up: `<path d="m6 15 6-6 6 6"/>`,
 };
 const icon = (k, size = 22) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
@@ -1773,8 +1794,11 @@ async function cookMore() {                  // the queue's running out: cook mo
   const seed = [...pq].reverse().find(x => x.nd_id) && keepCook === "local" ? [...pq].reverse().find(x => x.nd_id) : pq[pq.length - 1];
   cooking = true;
   const have = new Set(pq.map(qid));
+  // the style is what's been playing (the playlist's own songs first) and the playlist's name, not just the last song
+  const own = pq.filter(x => x.nd_id && !x._cooked), ctxIds = (own.length ? own : pq.filter(x => x.nd_id)).slice(-15).map(x => x.nd_id);
+  const extra = `&ctx=${encodeURIComponent(ctxIds.join(","))}&hint=${encodeURIComponent((nowSrc && nowSrc.name) || "")}`;
   const get = async kind => { try {
-      const r = await api(kind === "local" ? `/api/cook/local/${seed.nd_id}?n=40` : seed.nd_id ? `/api/cook/new/${seed.nd_id}?n=20` : `/api/cook/new/dz/${seed.deezer_id}?n=20`);
+      const r = await api((kind === "local" ? `/api/cook/local/${seed.nd_id}?n=40` : seed.nd_id ? `/api/cook/new/${seed.nd_id}?n=20` : `/api/cook/new/dz/${seed.deezer_id}?n=20`) + extra);
       return {style: r.style, songs: (r.internet ? r.songs : r.songs.map(x => ({...x, nd_id: x.id, cover: x.cover ? cover(x.cover) : ""}))).filter(x => !have.has(qid(x)))};
     } catch (e) { return {songs: []}; } };
   try {
@@ -1870,7 +1894,7 @@ function renderPlayer() {
     <div class="np-top"><button class="icon" onclick="closeSheet()" aria-label="Close">${icon("down")}</button>
       <div class="np-from">${it._cooked ? `Keep cooking · ${esc(typeof it._cooked === "string" ? it._cooked : "same style")}` : nowSrc?.name ? `Playing from ${esc(nowSrc.name)}` : "Now playing"}</div>
       <button class="icon" onclick="moreSheet()" aria-label="More">${icon("more")}</button></div>
-    ${artHTML(it, "np-art")}
+    ${npArt(it)}
     <div class="np-meta"><button class="icon nfm" onclick="notForMe()" aria-label="Not for me" title="Not for me: skip it and never cook or suggest it again">${icon("nope", 22)}</button>
       ${heart(it, "big")}<div class="t">${esc(it.title)}</div>
       <div class="s link" onclick="closeSheet(); openArtistByName(${esc(JSON.stringify((it.artist || "").split(/,| & | x | feat/i)[0].trim()))})">${esc(it.artist)}</div>
@@ -1899,9 +1923,59 @@ function renderPlayer() {
           : `<div class="empty small">${keepCook !== "off" ? `Nothing queued. When this song ends Umculo keeps cooking ${keepCook === "local" ? "from your music" : "songs you don't know"} in the same style.` : "Nothing queued after this song."}</div>`}</div>`}
   </div>`);
   $("#panel").classList.add("np-panel"); setPP(p.paused); tintFrom(it);
+  const slot = $("#np-vidslot"); if (slot) { slot.replaceWith(vidEl); vidSync(); }
   if (lyr && lyrCache[lyrKey(it)]) { const l = lyrCache[lyrKey(it)]; lyrAt = -1;
     $("#np-lyr").innerHTML = l.lines.length ? l.lines.map((x, i) => `<p data-i="${i}" ${l.synced ? `onclick="$('#player').currentTime=${(x.start || 0) / 1000}"` : ""}>${esc(x.value) || "♪"}</p>`).join("") : `<div class="empty small">No lyrics found for this song.</div>`;
     syncLyrics(); }
+}
+/* ---------- video for DJ mixes: a muted picture kept in step with the audio ---------- */
+let videoOn = store.get("umc_video", false); const vidInfo = {};
+const vidEl = document.createElement("video");
+vidEl.muted = true; vidEl.playsInline = true; vidEl.preload = "auto"; vidEl.className = "np-video";
+vidEl.setAttribute("playsinline", ""); vidEl.setAttribute("muted", ""); vidEl.disablePictureInPicture = false;
+vidEl.onloadedmetadata = () => vidSync();
+vidEl.onerror = () => { if (!vidEl.getAttribute("src")) return; const id = vidEl._for; vidEl.removeAttribute("src"); vidEl._for = null;
+  if (vidInfo[id]) vidInfo[id].available = false; toast("The video wouldn't play; carrying on with the audio"); renderPlayer(); };
+function vidInfoFor(it) {
+  if (!it?.nd_id || !isLong(it)) return null;
+  if (vidInfo[it.nd_id]) return vidInfo[it.nd_id];
+  vidInfo[it.nd_id] = {loading: true};
+  api(`/api/video/${it.nd_id}/info`).then(r => { vidInfo[it.nd_id] = r; if (pq[pi] === it && npOpen() && npView !== "lyrics") renderPlayer(); })
+    .catch(() => { vidInfo[it.nd_id] = {available: false}; });
+  return vidInfo[it.nd_id];
+}
+const vidShowing = it => videoOn && npView !== "lyrics" && !!(vidInfo[it?.nd_id] || {}).available;
+function npArt(it) {
+  const v = vidInfoFor(it);
+  if (!v || !v.available) return artHTML(it, "np-art") + (v && v.loading ? `<div class="vid-row"><span class="vid-tg ghost"><span class="spin"></span>Looking for the video…</span></div>` : "");
+  const row = `<div class="vid-row"><button class="vid-tg${videoOn ? " on" : ""}" onclick="toggleVideo()" aria-pressed="${videoOn}">${icon("video", 17)}<span>${videoOn ? "Video on" : "Watch the video"}</span></button>
+    ${videoOn && !v.saved ? `<button class="vid-tg ghost" onclick="saveVideo()" title="Keep a copy, so it plays without the internet">${v.saving ? `<span class="spin"></span>Saving…` : `${icon("dl", 16)}<span>Save it</span>`}</button>` : ""}
+    ${videoOn && v.saved ? `<span class="vid-tg ghost">${icon("check", 16)}<span>Saved</span></span>` : ""}</div>`;
+  return (vidShowing(it) ? `<div class="artbox np-art vid"><div id="np-vidslot"></div><button class="vid-fs" onclick="vidFull()" aria-label="Full screen" title="Full screen">${icon("full", 18)}</button></div>` : artHTML(it, "np-art")) + row;
+}
+function vidSync() {
+  const it = pq[pi], p = $("#player");
+  if (!it || !vidShowing(it) || !vidEl.isConnected) { if (!vidEl.paused) vidEl.pause(); return; }
+  if (vidEl._for !== it.nd_id) { vidEl._for = it.nd_id; vidEl.src = `/api/video/${it.nd_id}`; return; }
+  if (vidEl.readyState < 1) return;
+  vidEl.playbackRate = p.playbackRate || 1;
+  if (!vidEl.seeking && Math.abs(vidEl.currentTime - p.currentTime) > 0.5) vidEl.currentTime = p.currentTime;
+  if (p.paused) { if (!vidEl.paused) vidEl.pause(); } else if (vidEl.paused) vidEl.play().catch(() => {});
+}
+function toggleVideo() { videoOn = !videoOn; store.set("umc_video", videoOn); if (!videoOn) vidEl.pause(); renderPlayer(); }
+function vidFull() {
+  const f = vidEl.requestFullscreen || vidEl.webkitRequestFullscreen;
+  if (f) f.call(vidEl).catch?.(() => {}); else if (vidEl.webkitEnterFullscreen) vidEl.webkitEnterFullscreen();
+}
+async function saveVideo() {
+  const it = pq[pi]; if (!it?.nd_id) return;
+  try { await api(`/api/video/${it.nd_id}/save`, {method: "POST"}); vidInfo[it.nd_id] = {...vidInfo[it.nd_id], saving: true}; renderPlayer();
+    toast("Saving the video next to the mix; it'll play from your server");
+    const poll = async () => { const r = await api(`/api/video/${it.nd_id}/info`).catch(() => null); if (!r) return;
+      if (r.saving) return setTimeout(poll, 5000);
+      vidInfo[it.nd_id] = r; if (r.saved) toast("Video saved"); else if (r.message) toast(r.message); if (pq[pi] === it && npOpen()) renderPlayer(); };
+    setTimeout(poll, 5000);
+  } catch (e) { toast(e.message); }
 }
 async function keepIt() {
   const it = pq[pi];

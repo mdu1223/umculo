@@ -142,6 +142,56 @@ def no_runs(items, artist_of):
     return out
 
 
+def context_style(rows_by_id, by_artist, ctx_ids, hint="", seed=None):
+    """The style of what's been playing, not of one song: the playlist's name counts most ("Kwaito Classics"),
+    then a vote across the queue. -> (family, category, artists played) or (None, None, artists)."""
+    votes, cats, artists = {}, {}, []
+    hf, hc = style(hint) if hint else (None, None)
+    if hf:
+        votes[hf] = votes.get(hf, 0) + 5
+        cats[hf] = hc
+    for i in ctx_ids:
+        x = rows_by_id.get(i)
+        if not x:
+            continue
+        artists.append(x["artist"])
+        f, c = song_style(x, by_artist)
+        if f:
+            votes[f] = votes.get(f, 0) + 1
+            cats[f] = c
+    if seed is not None and seed["id"] not in ctx_ids:
+        artists.append(seed["artist"])
+        f, c = song_style(seed, by_artist)
+        if f:
+            votes[f] = votes.get(f, 0) + 1
+            cats[f] = c
+    if not votes:
+        return None, None, artists
+    fam, n = max(votes.items(), key=lambda v: v[1])
+    total = sum(votes.values())
+    return (fam, cats[fam], artists) if n * 10 >= total * 4 else (None, None, artists)
+
+
+def top_artists(names, k=3):
+    count = {}
+    for a in names:
+        for p in (core.split_artists(a) or [a])[:1]:
+            p = core.musicdb.primary(p)
+            count[p] = count.get(p, 0) + 1
+    return [a for a, _n in sorted(count.items(), key=lambda x: -x[1])[:k]]
+
+
+def related_many(names):
+    """Artists close to the ones that have been playing; those close to several come first."""
+    seen, score = {}, {}
+    for a in names:
+        rel, _aid = related_names(a)
+        for x in rel:
+            seen[x["id"]] = x
+            score[x["id"]] = score.get(x["id"], 0) + 1
+    return [seen[i] for i in sorted(score, key=lambda i: -score[i])]
+
+
 def seed_row(u, seed):
     srv = core.server
     return srv.db.q(f"SELECT * FROM song WHERE id=? AND {srv.lib_sql(u)}", (seed,), one=True) or \
@@ -150,8 +200,9 @@ def seed_row(u, seed):
                  (seed, seed), one=True)
 
 
-def cook_local(u, seed, n=50):
-    """-> (rows, style label). The seed first, then songs of the same style from your library."""
+def cook_local(u, seed, n=50, ctx=None, hint=""):
+    """-> (rows, style label). The seed first, then songs of the same style from your library.
+    With ctx (what's been playing) and a hint (the playlist's name), the style is the queue's, not one song's."""
     r = seed_row(u, seed)
     if not r:
         return [], None
@@ -162,10 +213,17 @@ def cook_local(u, seed, n=50):
     hearts = set(core.likes.starred_ids(u))            # songs you gave a heart come up more
     by_artist = artist_styles(rows)
     fam, cat = song_style(r, by_artist)
+    ctx_artists = []
+    if ctx or hint:
+        by_id = {x["id"]: x for x in rows}
+        cf_, cc_, ctx_artists = context_style(by_id, by_artist, ctx or [], hint, r)
+        if cf_:
+            fam, cat = cf_, cc_
     if not fam:                                   # nothing tagged: ask the catalogue what this artist plays
         fam, cat = dz_style_of(r["artist"], r["title"])
-    rel, _ = related_names(r["artist"])
-    rel_names = {core.norm(a["name"]) for a in rel}
+    heads = top_artists(ctx_artists or [r["artist"]])
+    rel = related_many(heads)
+    rel_names = {core.norm(a["name"]) for a in rel} | {core.norm(a) for a in heads}
     mine = {r["albumartist_id"], r["artist_id"]}
     year = r["year"] or 0
     same, close, wide = [], [], []
@@ -246,17 +304,22 @@ def known_keys(u):
     return keys
 
 
-def cook_new(u, artist, title, n=40, fam=None, cat=None):
-    """-> (items, style label). Songs from the internet you don't have and haven't played, in the same style."""
+def cook_new(u, artist, title, n=40, fam=None, cat=None, seeds=None):
+    """-> (items, style label). Songs from the internet you don't have and haven't played, in the same style.
+    seeds: [(artist, title)] of what's been playing, so the style is the queue's, not one song's."""
     if not fam:
         fam, cat = dz_style_of(artist, title)
-    seed_dz = None
-    try:
-        seed_dz = next(iter(core.deezer_search(f"{artist} {title}", limit=1)), None)
-    except Exception:  # noqa: BLE001
-        pass
-    seed_genres = set(dz_album_genres(seed_dz.get("album_id"))) if seed_dz else set()
-    rel, aid = related_names(artist, depth=2)
+    seeds = (seeds or [])[:4] or [(artist, title)]
+    seed_genres = set()
+    for a, t in seeds:
+        try:
+            d = next(iter(core.deezer_search(f"{a} {t}", limit=1)), None)
+        except Exception:  # noqa: BLE001
+            d = None
+        if d:
+            seed_genres |= set(dz_album_genres(d.get("album_id")))
+    heads = top_artists([a for a, _t in seeds] + [artist])
+    rel = related_many(heads) if len(heads) > 1 else related_names(artist, depth=1 if fam else 2)[0]
     pool = []
 
     def tops(a):
@@ -299,8 +362,8 @@ def cook_new(u, artist, title, n=40, fam=None, cat=None):
             picked.append(it)
             k += 1
     random.shuffle(pool)
-    if style_pool:
-        take(pool, n * 8 // 10)       # mostly the artist's circle; style playlists fill the rest
+    if style_pool:                                # half from the artists' circle, half from playlists of exactly this style
+        take(pool, n // 2)
         take(style_pool, n - len(picked))
     take(pool, n - len(picked))
     out = no_runs(picked, lambda i: core.norm(i["artist"]))
@@ -318,11 +381,13 @@ def handle_get(path, qs):
         return None
     kind, from_dz, sid = m.groups()
     n = max(10, min(100, int((qs.get("n") or ["50"])[0] or 50)))
+    ctx = [x for x in (qs.get("ctx") or [""])[0].split(",") if re.match(r"^[\w-]{1,40}$", x)][:20]
+    hint = (qs.get("hint") or [""])[0][:120]
     srv = core.server
     if kind == "local":
         if from_dz:
             raise ValueError("Cook locally starts from a song in your library")
-        rows, label = cook_local(me(), sid, n)
+        rows, label = cook_local(me(), sid, n, ctx, hint)
         if len(rows) < 2:
             raise LookupError("Not enough of your songs in this style yet. Try Just cook.")
         a = srv.anns(me(), [r["id"] for r in rows])
@@ -336,10 +401,19 @@ def handle_get(path, qs):
         if not r:
             raise LookupError("Song not found")
         artist, title = r["artist"], r["title"]
-        fam, cat = song_style(r, artist_styles(lib_rows(me())))
+    seeds = []
+    rows = lib_rows(me())
+    by_artist, by_id = artist_styles(rows), {x["id"]: x for x in rows}
+    if not from_dz:
+        fam, cat = song_style(r, by_artist)
+    if ctx or hint:
+        cf_, cc_, _a = context_style(by_id, by_artist, ctx, hint, r if not from_dz else None)
+        if cf_:
+            fam, cat = cf_, cc_
+        seeds = [(by_id[i]["artist"], by_id[i]["title"]) for i in ctx[-6:] if i in by_id]
     if not artist:
         raise LookupError("Song not found")
-    items, label = cook_new(me(), artist, title, n, fam, cat)
+    items, label = cook_new(me(), artist, title, n, fam, cat, seeds)
     if not items:
         raise LookupError("Couldn't find new songs in this style right now")
     core.subsonic.remember(items)
