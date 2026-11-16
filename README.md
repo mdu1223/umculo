@@ -27,6 +27,9 @@
 - **Listen together.** Start a room and share the code: everyone hears the same song at the same moment on their own phone, and anyone can add songs.
 - **On this phone.** Save a playlist, album or smart mix to your phone and it plays with no internet (the web app works offline).
 - **Play on speakers and TVs.** AirPlay and Chromecast from the player, and any speaker Home Assistant knows (Sonos, Google, Alexa, smart TVs): Umculo plays the queue there song after song. Set `HA_URL`/`HA_TOKEN`, or connect it in the app.
+- **Messages on WhatsApp or ntfy.** New mixes from shows you follow, a Sunday note about your week, downloads ready: each person chooses (WhatsApp through [WAHA](https://waha.devlike.pro)).
+- **Gigs near you.** Upcoming shows by artists you follow or play a lot, near your city or within a distance, in For You and as a message (from Bandsintown).
+- **Alarms and automations.** Wake up to a playlist, smart mix, show or radio on a Home Assistant speaker, getting louder. A hook address lets Home Assistant automations start music ("when I get home").
 - **Watch the mix.** Turn on *Video* while a DJ mix plays and the set's video plays along, in step with the audio. Tick *Also save the video* when you download a mix or subscribe to a show to keep the video too (up to 720p, next to the mix in a hidden `.video` folder).
 - **Tidy-up tools.** One folder per artist, duplicates removed, cover art and lyrics added.
 - **Family accounts.** Everyone gets their own library, playlists and history. You choose what each person can do, and they can ask you for songs.
@@ -91,6 +94,8 @@ Most settings live in the app (**Settings**). These are set in `docker-compose.y
 | `HOST_PATHS` | `/mnt/Storage/Media=/data` | Host-to-container folder mapping, for reading old playlists that use host paths |
 | `COOK_MIN_SECONDS` | `45` | Shortest song a Cook will include (skips intros and skits) |
 | `HA_URL`, `HA_TOKEN`, `HA_MEDIA_BASE` | | Home Assistant, for playing on speakers (or set it up in the app); `HA_MEDIA_BASE` is the address speakers use to reach Umculo, e.g. `http://192.168.0.2:8095` |
+| `WAHA_URL`, `WAHA_KEY`, `WAHA_SESSION` | | WhatsApp messages through WAHA (or set it up in the app) |
+| `TZ` | `Africa/Johannesburg` | Time zone for the weekly note (alarms keep the time zone of the phone that set them) |
 | `SUPPORT_GITHUB`, `SUPPORT_KOFI` | project links | Donation links in Settings (blank to hide) |
 
 ## Putting it on the internet

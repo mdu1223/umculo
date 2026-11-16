@@ -295,7 +295,7 @@ def candidate_for(show, e, video=False):
             "tier": e.get("tier") or "unknown", "eta": "", "name": e["title"], "detail": show.get("author") or show["title"],
             "duration": e.get("duration"), "podcast": bool(show.get("podcast")), "folder": folder,
             "filename": f"{e['date']} - {e['title']}" if (show.get("podcast") and e.get("date")) else "",
-            "long": long, "video": bool(video), "page": e.get("page") or "",
+            "long": long, "video": bool(video), "page": e.get("page") or "", "sub_owner": show.get("sub_owner") or "",
             "ref": {"url": e.get("media") or e.get("page"), "direct": bool(e.get("media")), "format": e.get("format") or ""}}
 
 
@@ -398,6 +398,9 @@ def after_filing(req, final):
     c = req["candidate"]
     if c.get("page") and (c.get("long") or c.get("video") or core.within(final, core.CONFIG["mixes"])):
         core.video.record(final, c["page"], bool(c.get("video")))      # watch it later; saved now if asked
+    if c.get("sub_owner"):                                              # a new mix from a show they follow
+        core.notify_people.send(core.notify_people.owner_id(c["sub_owner"]), f"{c.get('name')}\nfrom {c.get('detail')}", "new_mix",
+                                "New mix", core.notify_people.app_link())
 
 
 # --------------------------------------------------------------------------- subscriptions
@@ -478,7 +481,8 @@ def check_sub(sub):
             show["kind"] = "show"
         new = [e for e in show["entries"] if e["id"] not in set(sub["seen"])]
         for e in new[:CFG["sub_max_new"]]:
-            sh = {**show, "title": sub["title"], "podcast": sub["podcast"] or show.get("podcast"), "video": bool(sub.get("video"))}
+            sh = {**show, "title": sub["title"], "podcast": sub["podcast"] or show.get("podcast"), "video": bool(sub.get("video")),
+                  "sub_owner": sub.get("owner") or "admin"}
             long = (e.get("duration") or 0) > core.CONFIG["mix_seconds"] or sh["podcast"]
             if CFG["auto_find"] and long:
                 start_find(sh, e, keep=True, auto=True, owner=sub.get("owner") or "admin")   # downloads it, lists its songs
@@ -745,6 +749,10 @@ def run_find(f):
         msg = (f"Found {core.plural(len(tracks), 'song')}" + (f" using {how}" if how else "") if tracks else
                ("No songs recognised" if rec else "No tracklist published, and audio recognition isn't installed"))
         fset(f, state="done", progress=100, tracks=tracks, message=rec_error or msg)
+        if f.get("auto") and f.get("file"):                  # a subscription's new mix, in and listened to
+            core.notify_people.send(core.notify_people.owner_id(f.get("owner")), f"{f['title']}\nfrom {f['show']}"
+                                    + (f" · {core.plural(len(tracks), 'song')} found" if tracks else ""), "new_mix", "New mix",
+                                    core.notify_people.app_link())
         core.notify(f"Song finder: {core.plural(len(tracks), 'song')} in {f['title']}")
     except Exception as ex:  # noqa: BLE001
         if f.get("cancel"):

@@ -28,3 +28,9 @@ A key belongs to one person, lasts 12 hours, and only opens songs, covers and mi
 can be changed with it). A listening room shares the DJ's key with the people in the room while it's open. Keys are
 signed with a secret kept in `config/stream.key`; delete that file to cancel every key at once.
 The Home Assistant token is kept in `config/homeassistant.json` (readable only by Umculo) and is never sent back to the app.
+
+## Hook addresses (Home Assistant automations)
+
+A hook address (Account → Alarms and automations) lets Home Assistant start or stop music on a speaker as you,
+without signing in. It can't do anything else. Only a fingerprint of it is stored; making a new one cancels the old.
+The WAHA key is kept in `config/whatsapp.json` and never sent back to the app.

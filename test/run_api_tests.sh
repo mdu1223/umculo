@@ -20,4 +20,5 @@ run cook     8103 python3 test/v24_cook.py 8103
 run video    8104 python3 test/v26_video.py 8104
 TEST_SHAZAM=1 run player 8105 python3 test/v27_player.py 8105
 run together 8106 python3 test/v28_together.py 8106
+GIGS_API=http://127.0.0.1:11107 run life 8107 python3 test/v29_life.py 8107
 exit $FAIL

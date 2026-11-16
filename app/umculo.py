@@ -56,6 +56,9 @@ import chapters  # noqa: E402
 import radio  # noqa: E402
 import cast  # noqa: E402
 import party  # noqa: E402
+import notify as notify_people  # noqa: E402
+import gigs  # noqa: E402
+import alarms  # noqa: E402
 import security  # noqa: E402
 import jellyfin  # noqa: E402
 import cook  # noqa: E402
@@ -63,7 +66,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -792,6 +795,9 @@ def run_request(req):
         nd_scan()
         update(req, state="ready", message="Ready in your library")
         notify(f"Ready: {req['target']['artist']} - {req['target']['title']}")
+        if req.get("user") or not cand.get("sub_owner"):
+            notify_people.send(req.get("user") or notify_people.owner_id("admin"),
+                               f"{req['target']['artist']} - {req['target']['title']}", "ready", "Ready to play")
     except Exception as e:  # noqa: BLE001
         if req.get("cancel"):
             update(req, state="failed", progress=0, message="Stopped")
@@ -2342,6 +2348,8 @@ class Handler(BaseHTTPRequestHandler):
             return jellyfin.handle(self, "GET")
         if self.path in ("/manifest.json", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png", "/", "/index.html", "/sw.js"):
             return self.static(self.path)            # the page itself shows the sign-in when needed
+        if self.path.startswith("/api/hook/") and alarms.hook(self, "GET"):   # Home Assistant automations: their own key
+            return None
         if not self.authed():
             return self.deny()
         u = urllib.parse.urlparse(self.path)
@@ -2441,7 +2449,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"quality": f"MP3 {sq}", "from": f"Your library, converted from {orig}"})
             out = links.handle_get(u.path, qs)
             if out is None:
-                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs) or chapters.handle_get(u.path, qs) or radio.handle_get(u.path, qs) or cast.handle_get(u.path, qs) or party.handle_get(u.path, qs)
+                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs) or chapters.handle_get(u.path, qs) or radio.handle_get(u.path, qs) or cast.handle_get(u.path, qs) or party.handle_get(u.path, qs) or notify_people.handle_get(u.path, qs) or gigs.handle_get(u.path, qs) or alarms.handle_get(u.path, qs)
             if out is None:
                 out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs)
                        or share.handle_get(u.path, qs) or playlists.handle_get(u.path, qs) or recipes.handle_get(u.path, qs)
@@ -2468,6 +2476,8 @@ class Handler(BaseHTTPRequestHandler):
         if jellyfin.is_jellyfin(self.path):
             return jellyfin.handle(self, "POST")
         p0 = self.path.split("?")[0]
+        if p0.startswith("/api/hook/") and alarms.hook(self, "POST"):
+            return None
         if p0 in ("/api/login", "/api/setup"):          # signing in needs no session
             users.LOCAL.user = None
             try:
@@ -2570,7 +2580,7 @@ class Handler(BaseHTTPRequestHandler):
                 tr_set(job, tr, state="downloading", message="Starting your choice")
                 POOL.submit(manual_pick, job, tr, chk["target"], cand)
                 return self.send_json({"ok": True})
-            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0]) or chapters.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
+            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0]) or chapters.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or notify_people.handle_post(self.path.split("?")[0], b) or gigs.handle_post(self.path.split("?")[0], b) or alarms.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
             if out is None:
                 out = listening.handle_post(self.path.split("?")[0], b)
             if out is None:
@@ -2727,6 +2737,9 @@ def main():
     radio.init(sys.modules[__name__])
     cast.init(sys.modules[__name__])
     party.init(sys.modules[__name__])
+    notify_people.init(sys.modules[__name__])
+    gigs.init(sys.modules[__name__])
+    alarms.init(sys.modules[__name__])
     load_jobs()
     threading.Thread(target=scan_loop, daemon=True).start()
     threading.Thread(target=retry_loop, daemon=True).start()

@@ -449,6 +449,13 @@ nav.tabs button{font-size:11px}
 .spk-row .meta{flex:1}.spk-row .muted{font-size:12px}
 .party-code{font-size:38px;font-weight:900;letter-spacing:.18em;text-align:center;margin:8px 0 2px;font-variant-numeric:tabular-nums}
 .who{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.who span{padding:4px 10px;border-radius:99px;background:color-mix(in srgb,var(--ink) 8%,transparent);font-size:13px;font-weight:650}
+.gig{flex:none;width:160px;display:flex;flex-direction:column;gap:2px;padding:12px;border-radius:14px;background:var(--panel);border:1px solid var(--line);color:var(--ink);text-decoration:none;font-size:12px}
+.gig b{font-size:15px;margin-top:4px}.gig span{color:var(--quiet);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.gig em{font-style:normal;color:var(--accent);font-weight:700;margin-top:6px}
+.gig-d{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--accent)}
+.switch{position:relative;width:44px;height:26px;flex:none}.switch input{opacity:0;width:0;height:0}
+.switch span{position:absolute;inset:0;border-radius:99px;background:var(--line);transition:.2s;cursor:pointer}
+.switch span::after{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.2s}
+.switch input:checked+span{background:var(--accent)}.switch input:checked+span::after{transform:translateX(18px)}
 .radio-in{display:flex;gap:8px;margin:0 0 10px}.radio-in .field{flex:1;margin:0}
 .rtile{flex:none;width:150px;height:96px;border:0;border-radius:16px;padding:12px;text-align:left;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;cursor:pointer;color:#fff;
   background:linear-gradient(135deg,hsl(var(--h) 65% 42%),hsl(calc(var(--h) + 50) 70% 28%))}
@@ -1384,6 +1391,18 @@ function recipeCard(r) {
     <div class="s">${nextRun(r)}</div>
     ${r.count ? `<button class="rc-play" onclick="event.stopPropagation(); playRecipe('${r.id}')">▶</button>` : ""}</div>`;
 }
+async function loadGigs() {
+  const el = $("#fy-gigs"); if (!el) return;
+  let r; try { r = await api("/api/gigs"); } catch (e) { return; }
+  if (r.needs_place) { el.innerHTML = `<h2>Gigs near you</h2><div class="box rowline"><div class="meta"><b>See when your artists play near you</b>
+      <div class="muted">Tell Umculo where you are, and get a message when one of them announces a show.</div></div><button class="btn small" onclick="notifySheet()">Set it up</button></div>`; return; }
+  const where = r.where.city || r.where.country || "you";
+  el.innerHTML = `<h2>Gigs near ${esc(where)} <span class="count">${r.gigs.length}</span></h2>` + (r.gigs.length ? `<div class="shelf">${r.gigs.slice(0, 20).map(g => {
+      const d = new Date(g.date), day = isNaN(d) ? g.date : d.toLocaleDateString(undefined, {weekday: "short", day: "numeric", month: "short"});
+      return `<a class="gig" href="${esc(g.tickets || g.url)}" target="_blank" rel="noopener"><div class="gig-d">${esc(day)}</div><b>${esc(g.artist)}</b>
+        <span>${esc(g.venue)}</span><span>${esc(g.city)}${g.km ? ` · ${g.km} km` : ""}</span><em>${g.tickets ? "Tickets" : "Details"} ›</em></a>`; }).join("")}</div>`
+    : `<div class="muted" style="margin:0 4px">No shows near ${esc(where)} right now from the artists you follow or play most. You'll get a message when one is announced.</div>`);
+}
 async function loadForYou() {
   clearTimeout(fyTimer);
   try { [fy, rc] = await Promise.all([api("/api/foryou"), api("/api/recipes")]); } catch (e) { $("#fy").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
@@ -1401,6 +1420,7 @@ async function loadForYou() {
     <div class="genres">${rc.genres.map(g => `<button class="gchip" onclick="playStation(${esc(JSON.stringify(g))}, this)">${esc(g)}</button>`).join("")}
     <button class="gchip other" onclick="askStation()">Something else…</button></div>`;
   h += await artistShelves();
+  h += `<div id="fy-gigs"></div>`;
   if (w && w.songs.length) {
     const covers = w.songs.filter(s => s.cover).slice(0, 4).map(s => `<img src="${esc(s.cover)}" alt="">`).join("");
     const pr = w.progress;
@@ -1420,7 +1440,7 @@ async function loadForYou() {
   h += `<div class="chips" style="margin:16px 0"><button class="btn small ghost" onclick="fyAction('refresh')">Refresh suggestions</button>
     <button class="btn small ghost" onclick="fyAction('weekly')">New weekly mix now</button>
     <span class="muted" style="align-self:center">${fy.built ? "Updated " + ago(fy.built) : ""}</span></div>`;
-  $("#fy").innerHTML = h;
+  $("#fy").innerHTML = h; loadGigs();
   if ((fy.building || rc.recipes.some(r => r.running || (r.progress && r.progress.running))) && !$("#view-foryou").hidden) fyTimer = setTimeout(loadForYou, 6000);
 }
 function tile(it) {
@@ -1530,6 +1550,113 @@ async function haSheet() {
 async function haSave(forget) {
   const body = forget ? {forget: true} : {url: $("#ha-url").value, token: $("#ha-token").value, media_base: $("#ha-base").value};
   try { const r = await api("/api/ha", {method: "POST", body: JSON.stringify(body)}); toast(r.ok ? "Home Assistant connected" : r.message); haSheet(); }
+  catch (e) { toast(e.message); }
+}
+/* ---------- messages (WhatsApp / ntfy), gigs, alarms ---------- */
+const WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const myTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ""; } };
+async function notifySheet() {
+  let r; try { r = await api("/api/notify"); } catch (e) { return toast(e.message); }
+  const p = r.prefs, ev = p.events, sw = (k, t, sub) => `<label class="opt"><input type="checkbox" data-ev="${k}" ${ev[k] ? "checked" : ""}> <span>${t} <span class="muted">· ${sub}</span></span></label>`;
+  const body = `<div class="grab"></div><div class="np-sub"><button class="icon" onclick="${npOpen() ? "renderPlayer()" : "openAccount()"}" aria-label="Back">${icon("down")}</button><div class="t">Messages and gigs</div><span></span></div>
+    <div class="box"><b>Where messages go</b>
+      ${r.whatsapp_ready ? `<input class="field" id="nf-wa" inputmode="tel" placeholder="Your WhatsApp number, e.g. 082 123 4567" value="${esc(p.whatsapp || "")}">` : `<div class="muted" style="margin:6px 0">WhatsApp isn't connected yet${me?.user?.is_admin ? `: <a href="#" onclick="waSheet(); return false">connect WAHA</a>` : " (ask the admin)"}.</div>`}
+      ${r.ntfy_ready ? `<input class="field" id="nf-ntfy" placeholder="Your own ntfy topic (optional)" value="${esc(p.ntfy_topic || "")}">` : ""}</div>
+    <div class="box"><b>What to send</b>${sw("new_mix", "New mixes", "from shows you subscribe to")}${sw("weekly", "Your week", "Sunday evening: minutes, top artists, new mixes")}
+      ${sw("gigs", "Gigs near you", "artists you follow or play a lot")}${sw("ready", "Downloads ready", "songs and albums you asked for")}</div>
+    <div class="box"><b>Where you are</b> <span class="muted">(for gigs)</span>
+      <div class="chips"><input class="field" id="nf-city" placeholder="City" value="${esc(p.city || "")}" style="flex:1"><input class="field" id="nf-country" placeholder="Country" value="${esc(p.country || "")}" style="flex:1"></div>
+      <div class="chips"><button class="btn small ghost" onclick="useMyPlace(this)">${p.lat != null ? icon("check", 15) + " Using your location" : "Use my location"}</button>
+        <select class="field" id="nf-radius" style="width:auto">${[50, 150, 300, 600].map(k => `<option value="${k}" ${(p.radius || 150) == k ? "selected" : ""}>within ${k} km</option>`).join("")}</select></div>
+      <input type="hidden" id="nf-lat" value="${p.lat ?? ""}"><input type="hidden" id="nf-lon" value="${p.lon ?? ""}"></div>
+    <div class="chips"><button class="btn" onclick="notifySave()">Save</button><button class="btn ghost" onclick="notifyTest(this)">Send a test</button></div>`;
+  if ($("#sheet").classList.contains("open")) setPanel(body); else openSheet(body);
+}
+function useMyPlace(btn) {
+  if (!navigator.geolocation) return toast("This browser can't share its location");
+  navigator.geolocation.getCurrentPosition(pos => { $("#nf-lat").value = pos.coords.latitude.toFixed(3); $("#nf-lon").value = pos.coords.longitude.toFixed(3);
+    btn.innerHTML = icon("check", 15) + " Using your location"; toast("Got it (rounded to about 100 m); tap Save"); }, () => toast("Location not allowed"), {timeout: 15000});
+}
+async function notifySave(quiet) {
+  const v = id => $(id) ? $(id).value : undefined, ev = {};
+  document.querySelectorAll("[data-ev]").forEach(x => ev[x.dataset.ev] = x.checked);
+  const b = {events: ev, tz: myTz(), city: v("#nf-city"), country: v("#nf-country"), lat: v("#nf-lat"), lon: v("#nf-lon"), radius: v("#nf-radius")};
+  if ($("#nf-wa")) b.whatsapp = v("#nf-wa"); if ($("#nf-ntfy")) b.ntfy_topic = v("#nf-ntfy");
+  try { await api("/api/notify", {method: "POST", body: JSON.stringify(b)}); if (!quiet) toast("Saved"); } catch (e) { toast(e.message); }
+}
+async function notifyTest(btn) { await notifySave(true); await busy(btn, async () => { const r = await api("/api/notify/test", {method: "POST", body: "{}"}); toast("Sent to " + r.sent.join(" and ")); }); }
+async function waSheet() {
+  let w; try { w = await api("/api/notify/whatsapp"); } catch (e) { return toast(e.message); }
+  setPanel(`<div class="grab"></div><div class="np-sub"><button class="icon" onclick="openAccount()" aria-label="Back">${icon("down")}</button><div class="t">WhatsApp</div><span></span></div>
+    <div class="muted" style="margin:0 4px 10px">Umculo sends WhatsApp messages through your WAHA server. Messages come from the WhatsApp number signed in to WAHA.</div>
+    <div class="box"><label class="muted">WAHA address</label><input class="field" id="wa-url" value="${esc(w.url || "")}" placeholder="http://192.168.0.2:3000">
+      <label class="muted">API key ${w.key_set ? "(saved; paste a new one to replace it)" : "(if WAHA asks for one)"}</label><input class="field" id="wa-key" type="password" autocomplete="off" placeholder="${w.key_set ? "••••••••" : ""}">
+      <label class="muted">Session</label><input class="field" id="wa-session" value="${esc(w.session || "default")}">
+      <div class="chips"><button class="btn" onclick="waSave()">Save</button>${w.url ? `<button class="btn ghost" onclick="waSave(true)">Disconnect</button>` : ""}</div></div>`);
+}
+async function waSave(forget) {
+  const b = forget ? {forget: true} : {url: $("#wa-url").value, key: $("#wa-key").value, session: $("#wa-session").value};
+  try { await api("/api/notify/whatsapp", {method: "POST", body: JSON.stringify(b)}); toast(forget ? "Disconnected" : "Saved: now add your number under Messages and send a test"); waSheet(); }
+  catch (e) { toast(e.message); }
+}
+let alarmCtx = null;
+async function alarmSheet() {
+  let r, sp, sm, pls, mx;
+  try { [r, sp, sm, pls, mx] = await Promise.all([api("/api/alarms"), api("/api/speakers").catch(() => ({ready: false, speakers: []})),
+      api("/api/smart").catch(() => ({mixes: []})), api("/api/lib/playlists").catch(() => ({playlists: []})), api("/api/lib/mixes").catch(() => ({mixes: []}))]); }
+  catch (e) { return toast(e.message); }
+  alarmCtx = {sp: sp.speakers || [], sm: sm.mixes || [], pls: pls.playlists || [], mx: mx.mixes || []};
+  const row = a => `<div class="rowline trk"><div class="meta"><b style="font-size:22px">${esc(a.time)}</b>
+      <div class="muted">${a.days.length === 7 ? "Every day" : a.days.length ? a.days.map(d => WEEK[d]).join(" ") : "Once"} · ${esc(a.what.name)} · ${esc(a.speaker_name)}</div></div>
+      <button class="btn small ghost" onclick="alarmTest('${a.id}', this)">Test</button>
+      <label class="switch"><input type="checkbox" ${a.on ? "checked" : ""} onchange="alarmSave({id: '${a.id}', on: this.checked}, true)"><span></span></label>
+      <button class="icon" onclick="alarmDel('${a.id}')" aria-label="Delete">✕</button></div>`;
+  setPanel(`<div class="grab"></div><div class="np-sub"><button class="icon" onclick="openAccount()" aria-label="Back">${icon("down")}</button><div class="t">Alarms and automations</div><span></span></div>
+    ${!r.ha ? `<div class="box muted">Alarms play on your home speakers through Home Assistant.${me?.user?.is_admin ? ` <a href="#" onclick="haSheet(); return false">Connect it</a>` : " Ask the admin to connect it."}</div>` : ""}
+    ${r.alarms.length ? `<div class="box">${r.alarms.map(row).join("")}</div>` : ""}
+    ${r.ha ? `<h2>New alarm</h2><div class="box">
+      <input class="field" type="time" id="al-time" value="06:30" style="font-size:22px;font-weight:800">
+      <div class="seg" id="al-days">${WEEK.map((d, i) => `<button class="${i < 5 ? "on" : ""}" onclick="this.classList.toggle('on')" data-d="${i}">${d}</button>`).join("")}</div>
+      <label class="muted">Play</label><select class="field" id="al-what">
+        ${alarmCtx.sm.map(x => `<option value="smart|${x.id}">${esc(x.name)}</option>`).join("")}
+        ${alarmCtx.pls.map(x => `<option value="playlist|${x.id}">${esc(x.name)} (playlist)</option>`).join("")}
+        ${alarmCtx.mx.map(x => `<option value="show|${x.id}">${esc(x.name)} (newest mixes)</option>`).join("")}
+        <option value="radio|">Radio…</option></select>
+      <input class="field" id="al-q" placeholder="Radio: e.g. Sunday jazz, Deep House" style="display:none">
+      <label class="muted">On</label><select class="field" id="al-sp">${alarmCtx.sp.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select>
+      <label class="muted">Volume <span id="al-vv">35%</span>, getting louder over</label>
+      <div class="chips"><input type="range" id="al-vol" min="5" max="100" value="35" oninput="$('#al-vv').textContent = this.value + '%'" style="flex:1">
+        <select class="field" id="al-ramp" style="width:auto">${[0, 2, 5, 10, 15].map(m => `<option value="${m}" ${m === 5 ? "selected" : ""}>${m ? m + " min" : "no ramp"}</option>`).join("")}</select></div>
+      <button class="btn" onclick="alarmNew()">Add alarm</button></div>` : ""}
+    <h2>Home Assistant automations</h2><div class="box"><div class="muted">Start music from an automation: when you get home, at sunset, when the lounge TV turns off… Make a hook address (it plays music as you, nothing else), then use it in Home Assistant.</div>
+      <div id="hook-out"></div><button class="btn small" onclick="hookNew()">${r.hook ? "Make a new hook address (the old one stops working)" : "Make a hook address"}</button></div>`);
+  $("#al-what")?.addEventListener("change", e => { $("#al-q").style.display = e.target.value.startsWith("radio") ? "" : "none"; });
+}
+async function alarmNew() {
+  const [kind, id] = $("#al-what").value.split("|"), sel = $("#al-what").selectedOptions[0];
+  const q = $("#al-q").value.trim(); if (kind === "radio" && !q) return toast("Type what the radio should play");
+  const sp = $("#al-sp");
+  await alarmSave({time: $("#al-time").value, days: [...document.querySelectorAll("#al-days button.on")].map(b => +b.dataset.d),
+    what: {kind, id, q, name: kind === "radio" ? q : sel.textContent.replace(/ \((playlist|newest mixes)\)$/, "")},
+    speaker: sp.value, speaker_name: sp.selectedOptions[0]?.textContent || sp.value, volume: $("#al-vol").value / 100, ramp: +$("#al-ramp").value, tz: myTz()});
+}
+async function alarmSave(b, quiet) {
+  try { await api("/api/alarms", {method: "POST", body: JSON.stringify(b)}); if (!quiet) { toast("Alarm set"); alarmSheet(); } } catch (e) { toast(e.message); }
+}
+async function alarmDel(id) { if (!confirm("Delete this alarm?")) return; try { await api(`/api/alarms/${id}/delete`, {method: "POST", body: "{}"}); alarmSheet(); } catch (e) { toast(e.message); } }
+async function alarmTest(id, btn) { await busy(btn, async () => { const r = await api(`/api/alarms/${id}/test`, {method: "POST", body: "{}"}); toast("Playing " + (r.playing || "")); }); }
+async function hookNew() {
+  try { const r = await api("/api/alarms/hook", {method: "POST", body: "{}"});
+    const base = `${location.origin}/api/hook/${r.key}`, sp = alarmCtx?.sp[0]?.id || "media_player.lounge";
+    $("#hook-out").innerHTML = `<div class="muted" style="margin-top:8px">Your hook address (shown once; keep it like a password):</div>
+      <div class="sel" style="word-break:break-all;margin:6px 0;font-family:ui-monospace,monospace;font-size:12px">${esc(base)}/play?what=radio&q=Deep%20House&speaker=${esc(sp)}&volume=0.3</div>
+      <div class="muted">In Home Assistant's configuration.yaml:</div>
+      <pre style="white-space:pre-wrap;word-break:break-all;font-size:12px;background:var(--chip);padding:10px;border-radius:10px;user-select:all">rest_command:
+  umculo_welcome_home:
+    url: "${esc(base)}/play?what=radio&amp;q=Deep%20House&amp;speaker=${esc(sp)}&amp;volume=0.3"
+  umculo_stop:
+    url: "${esc(base)}/stop?speaker=${esc(sp)}"</pre>
+      <div class="muted">Then call <b>rest_command.umculo_welcome_home</b> in any automation. <b>what</b> can be radio (with q), smart (id: liked, repeat, fresh…), playlist (id) or show (id).</div>`; }
   catch (e) { toast(e.message); }
 }
 /* ---------- listen together ---------- */
@@ -2716,6 +2843,11 @@ async function openAccount() {
     if (mine.length) h += `<h2>Your requests</h2>` + approvalRows(mine, true);
     h += `<h2>What you can do</h2><div class="box">${permLines(u.perms).join("")}</div>`;
   }
+  h += `<h2>Messages, gigs and alarms</h2><div class="box"><div class="menu">
+      <button onclick="notifySheet()">Messages and gigs <span class="muted">· WhatsApp or ntfy: new mixes, your week, gigs near you</span></button>
+      <button onclick="alarmSheet()">Alarms and automations <span class="muted">· wake up to music; Home Assistant</span></button>
+      ${u.is_admin ? `<button onclick="waSheet()">WhatsApp connection <span class="muted">· WAHA, for everyone's messages</span></button>
+      <button onclick="haSheet()">Home Assistant connection <span class="muted">· for speakers and alarms</span></button>` : ""}</div></div>`;
   h += `<button class="btn ghost" style="width:100%;margin-top:14px" onclick="signOut()">Sign out</button>`;
   openSheet(h);
   if (u.is_admin) loadPeople();
