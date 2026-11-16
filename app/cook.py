@@ -174,18 +174,23 @@ def context_style(rows_by_id, by_artist, ctx_ids, hint="", seed=None):
 
 def scene_artists(ctx_ids):
     """Artists that share playlists with what's been playing: the same scene, not just the same broad style
-    (South African soul and US R&B are both "R&B")."""
+    (South African soul and US R&B are both "R&B"). A playlist counts by how much of it is the queue's music,
+    so a big everything-playlist (Shazam finds, liked songs) says little."""
     if not ctx_ids:
         return set()
     srv = core.server
     marks = ",".join("?" * len(ctx_ids))
-    pids = [r["pid"] for r in srv.db.q(f"""SELECT pid, COUNT(*) AS n FROM plsong WHERE song IN ({marks}) GROUP BY pid
-                                          HAVING n >= 2""", tuple(ctx_ids))]
-    if not pids:
+    hits = {r["pid"]: r["n"] for r in srv.db.q(f"SELECT pid, COUNT(*) AS n FROM plsong WHERE song IN ({marks}) GROUP BY pid",
+                                               tuple(ctx_ids))}
+    if not hits:
         return set()
-    m2 = ",".join("?" * len(pids))
-    rows = srv.db.q(f"""SELECT song.artist AS a FROM plsong JOIN song ON song.id = plsong.song
-                        WHERE plsong.pid IN ({m2}) AND (SELECT COUNT(*) FROM plsong p2 WHERE p2.pid = plsong.pid) <= 400""", tuple(pids))
+    m2 = ",".join("?" * len(hits))
+    sizes = {r["pid"]: r["n"] for r in srv.db.q(f"SELECT pid, COUNT(*) AS n FROM plsong WHERE pid IN ({m2}) GROUP BY pid", tuple(hits))}
+    keep = [p for p, n in hits.items() if n >= 2 and n / max(1, sizes.get(p, 1)) >= 0.25 or n / max(1, sizes.get(p, 1)) >= 0.5]
+    if not keep:
+        return set()
+    m3 = ",".join("?" * len(keep))
+    rows = srv.db.q(f"SELECT song.artist AS a FROM plsong JOIN song ON song.id = plsong.song WHERE plsong.pid IN ({m3})", tuple(keep))
     return {core.norm(core.musicdb.primary(r["a"] or "")) for r in rows if r["a"]}
 
 
@@ -266,6 +271,8 @@ def cook_local(u, seed, n=50, ctx=None, hint=""):
     same.sort(key=lucky)
     same.sort(key=era)
     same.sort(key=lambda x: 0 if core.norm(core.musicdb.primary(x["artist"])) in scene else 1)   # the queue's scene first
+    if ctx and len(close) >= n // 2:              # plenty from the queue's own artists and their circle:
+        same = [x for x in same if core.norm(core.musicdb.primary(x["artist"])) in scene]   # outsiders stay out
     close.sort(key=lucky)
     picked, seen = [r], {r["id"]}
 
@@ -282,6 +289,7 @@ def cook_local(u, seed, n=50, ctx=None, hint=""):
     add(own, max(3, n // 6))                      # some of the artist
     add([x for x in close if x not in own], n // 2)   # artists close to them
     add(same, n - len(picked))                   # the rest of the style
+    add(close, n - len(picked))                  # still room: more of the queue's own artists and their circle
     widened = 0
     if len(picked) < min(n, 20) and wide:         # thin: widen to the category (Afro House -> house), never further
         random.shuffle(wide)
