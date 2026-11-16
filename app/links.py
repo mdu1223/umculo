@@ -629,6 +629,33 @@ def start_find(show, e, keep=False, auto=False, owner=None):
     return fid
 
 
+def start_local_find(path, title, show, duration, cover=""):
+    """The song finder on a mix that's already in your library: chapters for the player."""
+    owner = core.users.me_key()
+    with LOCK:
+        for f in FINDS.values():
+            if f.get("file") == path and f["state"] != "failed" and (f.get("owner") or "admin") == owner:
+                return f["id"]
+    fid = uuid.uuid4().hex[:12]
+    e = {"id": "local-" + fid, "title": title, "duration": duration, "description": "", "page": ""}
+    f = {"id": fid, "title": title, "show": show, "cover": cover, "duration": duration, "state": "queued", "progress": 0,
+         "message": "Waiting its turn", "tracks": [], "created": time.time(), "keep": False, "auto": False, "local": path,
+         "file": path, "show_data": {"kind": "single", "podcast": False, "title": show, "author": show, "cover": cover,
+                                     "feed": "", "url": ""}, "entry": e, "owner": owner}
+    with LOCK:
+        FINDS[fid] = f
+    save_finds()
+    FIND_POOL.submit(run_find, f)
+    return fid
+
+
+def find_for_file(path):
+    """The song finder's result for this file (yours), newest first."""
+    with LOCK:
+        hits = [f for f in FINDS.values() if f.get("file") == path and core.users.mine(f)]
+    return max(hits, key=lambda f: (f["state"] == "done", f["created"]), default=None)
+
+
 def fset(f, **kw):
     with LOCK:
         f.update(kw)
@@ -672,7 +699,7 @@ def run_find(f):
         listed = parse_tracklist(e.get("description", ""), e.get("chapters"))
         fset(f, state="downloading", message="Downloading the mix to listen to it",
              tracks=[{**t, "from": "tracklist", "hits": 0} for t in listed])
-        path = dl_link(req)
+        path = f["local"] if f.get("local") else dl_link(req)     # a mix already in the library: just listen to it
         dur = core.audio_duration(path) or e.get("duration") or 0
         rec = recognizer()
         heard, fails, rec_error = [], 0, ""
@@ -705,7 +732,9 @@ def run_find(f):
         fset(f, message="Checking your library")
         for t in tracks:
             t["owned"] = owned(t["artist"], t["title"])
-        if f.get("keep"):
+        if f.get("local"):
+            path = ""                                # never delete the library's copy
+        elif f.get("keep"):
             final = core.file_into_library(path, req)
             core.request_scan()
             f["file"] = final
@@ -729,7 +758,7 @@ def run_find(f):
                 rec.close()
             except Exception:  # noqa: BLE001
                 pass
-        if path:
+        if path and not f.get("local"):
             try:
                 os.remove(path)
             except OSError:

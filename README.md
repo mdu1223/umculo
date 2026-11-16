@@ -20,6 +20,10 @@
 - **Playlists that stay in sync.** Paste a Spotify or Apple Music playlist link and Umculo builds it from your library and your sources, then keeps it up to date.
 - **For You.** Weekly mix, "because you play…", rediscover old favourites, follow artists and get their new releases.
 - **DJ mixes and podcasts.** Subscribe to shows, and Umculo can recognise the songs in a mix.
+- **What's playing in the mix.** The song finder lists every song in a DJ mix with its time; the player shows the song playing now and jumps to any of them. Works on mixes already in your library too.
+- **Radio.** Type an artist, a style, a mood or an era ("Kwaito from the 90s", "chill sunday", "Kabza De Small") and it plays forever: your songs first, new ones mixed in.
+- **Gapless and crossfade.** The next song is ready before this one ends; crossfade is a setting (an album or mix always flows straight on).
+- **Karaoke and visualiser.** Full-screen synced lyrics that fill as they're sung, or a visualiser that moves with the music.
 - **Watch the mix.** Turn on *Video* while a DJ mix plays and the set's video plays along, in step with the audio. Tick *Also save the video* when you download a mix or subscribe to a show to keep the video too (up to 720p, next to the mix in a hidden `.video` folder).
 - **Tidy-up tools.** One folder per artist, duplicates removed, cover art and lyrics added.
 - **Family accounts.** Everyone gets their own library, playlists and history. You choose what each person can do, and they can ask you for songs.

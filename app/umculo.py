@@ -52,6 +52,8 @@ import migrate  # noqa: E402
 import listening  # noqa: E402
 import importers  # noqa: E402
 import video  # noqa: E402
+import chapters  # noqa: E402
+import radio  # noqa: E402
 import security  # noqa: E402
 import jellyfin  # noqa: E402
 import cook  # noqa: E402
@@ -59,7 +61,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "2.6.0"
+VERSION = "2.7.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2430,7 +2432,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"quality": f"MP3 {sq}", "from": f"Your library, converted from {orig}"})
             out = links.handle_get(u.path, qs)
             if out is None:
-                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs)
+                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs) or chapters.handle_get(u.path, qs) or radio.handle_get(u.path, qs)
             if out is None:
                 out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs)
                        or share.handle_get(u.path, qs) or playlists.handle_get(u.path, qs) or recipes.handle_get(u.path, qs)
@@ -2441,6 +2443,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.static(u.path)
         except PermissionError as e:
             return self.send_json({"error": str(e)}, 403)
+        except ValueError as e:                       # a question that can't be answered as asked
+            return self.send_json({"error": str(e)}, 400)
         except LookupError as e:
             return self.send_json({"error": str(e)}, 404)
         except (BrokenPipeError, ConnectionResetError):
@@ -2557,7 +2561,7 @@ class Handler(BaseHTTPRequestHandler):
                 tr_set(job, tr, state="downloading", message="Starting your choice")
                 POOL.submit(manual_pick, job, tr, chk["target"], cand)
                 return self.send_json({"ok": True})
-            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0]) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
+            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0]) or chapters.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
             if out is None:
                 out = listening.handle_post(self.path.split("?")[0], b)
             if out is None:
@@ -2710,6 +2714,8 @@ def main():
     mixtidy.init(sys.modules[__name__])
     likes.init(sys.modules[__name__])
     video.init(sys.modules[__name__])
+    chapters.init(sys.modules[__name__])
+    radio.init(sys.modules[__name__])
     load_jobs()
     threading.Thread(target=scan_loop, daemon=True).start()
     threading.Thread(target=retry_loop, daemon=True).start()

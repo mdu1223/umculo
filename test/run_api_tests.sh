@@ -18,4 +18,5 @@ run family22 8101 python3 test/v22_family.py 8101
 run security 8102 python3 test/v23_security.py 8102
 run cook     8103 python3 test/v24_cook.py 8103
 run video    8104 python3 test/v26_video.py 8104
+TEST_SHAZAM=1 run player 8105 python3 test/v27_player.py 8105
 exit $FAIL

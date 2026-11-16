@@ -20,13 +20,14 @@ python3 -c 'import sys,mutagen; f=mutagen.File(sys.argv[1]); f["REPLAYGAIN_TRACK
 printf '[00:01.00]Ngud line one\n[00:03.50]line two\n' > "$M/Albums/Kwesta/DaKAR II/01 Ngud.lrc"
 mkdir -p $M/_playlists; printf '#EXTM3U\n../Albums/Kwesta/DaKAR II/01 Ngud.flac\n../Umculo/Mas Musiq/Mas Musiq - Zaka.m4a\n' > "$M/_playlists/Family Faves.m3u8"
 ffmpeg -v error -y -f lavfi -i "testsrc=d=6:s=320x180:r=10" -f lavfi -i "sine=d=6" -shortest -c:v mpeg4 -c:a aac -movflags +faststart $S/video.mp4 || cp "$M/Albums/Kwesta/DaKAR II/01 Ngud.flac" $S/video.mp4
+SHZ=""; if [ -n "$TEST_SHAZAM" ]; then echo '[[0, 10000, "Kwesta", "Ngud"]]' > $S/shazam.json; SHZ=$S/shazam.json; fi
 MOCK_ND_LIBRARY=1 python3 test/mock_services.py $((PORT+1000)) $S/data > $S/mock.log 2>&1 & MP=$!
 for i in $(seq 30); do grep -q ready $S/mock.log && break; sleep 0.5; done
 U=http://localhost:$((PORT+1000))
 env PORT=$PORT MUSIC_SERVER=builtin NAVIDROME_URL=$U NAVIDROME_USER=mdu NAVIDROME_PASSWORD=ndpass SLSKD_URL=$U PROWLARR_URL=$U PROWLARR_KEY=k SABNZBD_URL=$U SABNZBD_KEY=k DEEZER_API=$U \
  MUSIC_DIR=$M FAMILY_DIR=$S/data/Family SPOTIFY_DIR="$M/Spotify Playlists" PLAYLISTS_DIR=$M/_playlists SLSKD_DOWNLOADS=$M/Soulseek LIBRARY_DIR=$M/Umculo \
  MIXES_DIR=$M/meta_podcasts STAGING_DIR=$S/data/downloads/umculo CONFIG_DIR=$S/config SOURCES=soulseek BATCH_SOURCES=soulseek SEARCH_SECONDS=1 COOK_MIN_SECONDS=1 \
- LRCLIB_API=$U NTFY_URL=$U/ntfy SHARE_SCAN_WAIT=1 ITUNES_API=$U PODOMATIC_FEED="$U/podomatic/{channel}.xml" UMCULO_TEST_VIDEO=$S/video.mp4 python3 -I app/umculo.py > $S/app.log 2>&1 & AP=$!
+ LRCLIB_API=$U NTFY_URL=$U/ntfy SHARE_SCAN_WAIT=1 ITUNES_API=$U PODOMATIC_FEED="$U/podomatic/{channel}.xml" UMCULO_TEST_VIDEO=$S/video.mp4 UMCULO_TEST_SHAZAM=$SHZ python3 -I app/umculo.py > $S/app.log 2>&1 & AP=$!
 echo "$AP $MP" > $S/pids
 for i in $(seq 40); do curl -s localhost:$PORT/rest/ping.view?u=mdu\&p=ndpass\&f=json | grep -q '"ok"' && break; sleep 0.5; done
 echo READY

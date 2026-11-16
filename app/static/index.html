@@ -179,6 +179,14 @@ header{padding-top:calc(14px + env(safe-area-inset-top))}
 .vid-tg.on{background:var(--accent);color:var(--accent-ink)}
 .vid-tg.ghost{background:none;color:var(--quiet)}
 .np.lyrmode .vid-row{display:none}
+.np-chap{margin:8px auto 0;display:inline-flex;align-items:center;gap:8px;max-width:100%;padding:5px 12px;border-radius:99px;font-size:13px;font-weight:650;
+  background:color-mix(in srgb,var(--ink) 8%,transparent);cursor:pointer}
+.np-chap span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.np-chap:empty{display:none}
+.chap{cursor:pointer}.chap .time{width:52px;flex:none;font-size:12px;color:var(--quiet);font-variant-numeric:tabular-nums}
+.chap.on{background:color-mix(in srgb,var(--accent) 14%,transparent)}.chap.on .t{color:var(--accent)}
+.chap .own{font-size:11px;color:var(--lossless);font-weight:700}
+.chapbox{margin:6px 0 4px;padding:12px;border-radius:14px;background:color-mix(in srgb,var(--ink) 6%,transparent);text-align:left}
 .np-meta .t{font-size:22px;font-weight:800;letter-spacing:-.01em;white-space:normal;line-height:1.2}
 .np-meta .s{font-size:16px;margin-top:3px;white-space:normal;color:var(--accent);cursor:pointer;font-weight:600}
 .np .src-q{font-size:12px;color:var(--quiet);margin-top:8px;min-height:20px}
@@ -419,6 +427,25 @@ nav.tabs button{font-size:11px}
 .ll{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04);word-break:break-word}
 .ll span{color:#7b8696;margin-right:8px}
 .ll.bad{color:#ff8a80}
+#stage{position:fixed;inset:0;z-index:40;background:#07070a;color:#fff;overflow:hidden;user-select:none;-webkit-user-select:none}
+#stage .bg{position:absolute;inset:-40px;background:var(--st-art) center/cover;filter:blur(40px) brightness(.45) saturate(1.3);transform:scale(1.1)}
+#stage canvas{position:absolute;inset:0;width:100%;height:100%}
+#stage .top,#stage .bot{position:absolute;left:0;right:0;display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;transition:opacity .4s;z-index:2}
+#stage .bot{bottom:0;top:auto;padding:12px 16px calc(18px + env(safe-area-inset-bottom));justify-content:center}
+#stage.calm .top,#stage.calm .bot{opacity:0}
+#stage button{border:0;background:rgba(255,255,255,.14);color:#fff;border-radius:99px;padding:8px 14px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+#stage button.on{background:#fff;color:#000}
+#stage .ttl{flex:1;min-width:0}#stage .ttl b,#stage .ttl span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#stage .ttl span{opacity:.7;font-size:13px}
+#stage .kara{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 7vw;text-align:center;z-index:1;gap:2.2vh}
+#stage .kara p{margin:0;font-weight:800;line-height:1.15;transition:all .35s;opacity:.35;font-size:clamp(18px,3.6vw,34px)}
+#stage .kara p.cur{opacity:1;font-size:clamp(28px,6.4vw,64px);background:linear-gradient(90deg,#fff var(--k,0%),rgba(255,255,255,.38) var(--k,0%));-webkit-background-clip:text;background-clip:text;color:transparent}
+#stage .kara p.nx{opacity:.55}
+#stage .kara .free{overflow:auto;max-height:70vh;font-size:clamp(18px,3vw,26px);font-weight:700;line-height:1.5;opacity:.9;white-space:pre-line}
+#stage .vline{position:absolute;left:0;right:0;bottom:calc(86px + env(safe-area-inset-bottom));text-align:center;font-weight:800;font-size:clamp(18px,3.6vw,30px);padding:0 6vw;z-index:1;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+.radio-in{display:flex;gap:8px;margin:0 0 10px}.radio-in .field{flex:1;margin:0}
+.rtile{flex:none;width:150px;height:96px;border:0;border-radius:16px;padding:12px;text-align:left;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;cursor:pointer;color:#fff;
+  background:linear-gradient(135deg,hsl(var(--h) 65% 42%),hsl(calc(var(--h) + 50) 70% 28%))}
+.rtile b{font-size:15px;line-height:1.15}.rtile span{font-size:11px;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;z-index:30;display:none;max-width:90vw}
 </style>
 </head>
@@ -502,7 +529,7 @@ nav.tabs button{font-size:11px}
   <div class="scrim" onclick="closeSheet()"></div>
   <div class="panel" id="panel"></div>
 </div>
-<audio id="player"></audio>
+<div id="stage" hidden></div><audio id="player"></audio><audio id="player2" preload="auto"></audio>
 <div class="miniplayer" id="mini">
   <div id="mini-art" class="mini-art" onclick="openPlayer()"></div>
   <div class="meta" onclick="openPlayer()"><div class="t" id="mini-t"></div><div class="s" id="mini-s"></div></div>
@@ -676,6 +703,10 @@ async function renderSearchHome() {
   if (top.length) h += `<h2>Your favourites</h2><div class="shelf">${top.map(albumCard).join("")}</div>`;
   if (!rc) { try { const x = await fetch("/api/recipes"); if (x.ok) rc = await x.json(); } catch (e) {} }
   const g = (rc?.genres || []).slice(0, 16);
+  if (!radioSt) { try { radioSt = (await api("/api/radio/stations")).stations; } catch (e) { radioSt = []; } }
+  h += `<h2>Radio</h2><form class="radio-in" onsubmit="event.preventDefault(); playRadio(this.q.value, this.querySelector('button'))">
+      <input class="field" name="q" placeholder="An artist, style, mood or era: “Kwaito from the 90s”" autocomplete="off" enterkeyhint="go"><button class="btn">Play</button></form>
+    ${radioSt.length ? `<div class="shelf radios">${radioSt.map((x, i) => `<button class="rtile" style="--h:${(i * 53 + 20) % 360}" onclick="playRadio(${esc(JSON.stringify(x.q))}, this)"><b>${esc(x.name)}</b><span>${esc(x.sub)}</span></button>`).join("")}</div>` : ""}`;
   if (g.length) h += `<h2>Browse</h2><div class="browse">${g.map((x, i) => `<button class="btile" style="--h:${(i * 47) % 360}" onclick="playStation(${esc(JSON.stringify(x))}, null)">${esc(x)}</button>`).join("")}</div>`;
   if (!$("#q").value.trim()) { $("#results").innerHTML = h; markPlaying(); }
 }
@@ -1425,6 +1456,18 @@ function askStation() {
     <button class="btn" style="width:100%" onclick="playStation($('#st-vibe').value, this)">Play it</button>`);
   setTimeout(() => $("#st-vibe")?.focus(), 50);
 }
+/* ---------- radio: an artist, style, mood or era; keep cooking carries it on forever ---------- */
+let radioSt = null;
+async function playRadio(q, btn) {
+  q = (q || "").trim(); if (!q) return toast("Type an artist, a style, a mood or an era");
+  await busy(btn, async () => {
+    const r = await api(`/api/radio?q=${encodeURIComponent(q)}&new=${store.get("umc_radio_new", 1)}`);
+    const list = r.songs.map(x => x.lib ? {...x, nd_id: x.id, cover: x.cover ? cover(x.cover) : ""} : x);
+    if (keepCook === "off") { keepCook = "local"; store.set("umc_keepcook", keepCook); }
+    playList(list, 0, {id: "radio:" + q.toLowerCase(), name: r.name});
+    toast(`${r.name}${r.style ? " · " + r.style : ""}: playing, and it keeps going`);
+  });
+}
 async function playStation(vibe, btn) {
   vibe = (vibe || "").trim(); if (!vibe) return;
   document.querySelectorAll(".gchip:not(.fchip)").forEach(b => b.classList.toggle("on", b === btn));
@@ -1556,6 +1599,33 @@ const CAN = (() => {                         // what this browser plays as-is: t
   try { return Object.keys(t).filter(k => a.canPlayType(t[k])).join(","); } catch (e) { return "mp3"; }
 })();
 function srcFor(it) { return it.nd_id ? `/api/ndstream/${it.nd_id}?can=${CAN}` : `/api/stream/${it.deezer_id}`; }
+/* gapless and crossfade: the next song loads in a second player and takes over the moment this one ends */
+const canFade = (() => { try { const a = new Audio(); a.volume = 0.5; return a.volume === 0.5; } catch (e) { return false; } })();
+let xfade = 0;                                // read once the saved settings are set up (below)
+function prepNext() {                        // (iPhones only allow one player in the background, so they keep the one)
+  const n = pq[pi + 1], sp = $("#player2");
+  if (!canFade || !n || repeatMode === "one" || sleepEnd || sp._for === qid(n)) return;
+  sp._for = qid(n); sp.preload = "auto"; sp.src = srcFor(n); sp.load();
+}
+function xfadeOK(p) {
+  if (!xfade || p._xf || !p.duration || p.duration - p.currentTime > xfade || p.duration < xfade * 3) return false;
+  const it = pq[pi], n = pq[pi + 1], sp = $("#player2");
+  if (!n || repeatMode === "one" || sleepEnd || sp._for !== qid(n) || sp.readyState < 2) return false;
+  return !(it.album_id && it.album_id === n.album_id && it.nd_id && n.nd_id);   // an album or a continuous mix flows on its own
+}
+function swapPlayers(fade) {
+  const old = $("#player"), p = $("#player2");
+  for (const k of ["onloadedmetadata", "onplaying", "onpause", "onended", "onerror", "ontimeupdate"]) old[k] = null;
+  old.id = "player2"; p.id = "player"; old._for = null; p._for = null; p._xf = false;
+  const done = () => { old.pause(); old.removeAttribute("src"); old.load(); try { old.volume = 1; } catch (e) {} };
+  if (!fade || !canFade) { done(); try { p.volume = 1; } catch (e) {} return p; }
+  p.volume = 0; let k = 0; const steps = Math.round(fade * 20);
+  const t = setInterval(() => { k++; const x = Math.min(1, k / steps);
+    try { p.volume = Math.sin(x * Math.PI / 2); old.volume = Math.cos(x * Math.PI / 2); } catch (e) {}
+    if (x >= 1) { clearInterval(t); done(); } }, 50);
+  return p;
+}
+function setXfade(v) { xfade = v; store.set("umc_xfade", v); toast(v ? `Crossfade: ${v} seconds between songs` : "Crossfade off: songs follow on without a gap"); moreSheet(); }
 function warmNext() {                         // get the next two songs ready while this one plays
   for (const n of pq.slice(pi + 1, pi + 3)) {
     if (!n || n._warm) continue; n._warm = true;
@@ -1674,14 +1744,21 @@ async function cookMix(kind, it) {
     if (npOpen()) { npView = "next"; renderPlayer(); }
   } catch (e) { toast(e.message); }
 }
-function playAt() {
+function playAt(fade) {
   const it = pq[pi]; if (!it) return;
-  const p = $("#player");
+  let p = $("#player");
   reportListen();
-  it.q = null; p.preload = "auto";
-  p.src = srcFor(it);
-  const saved = store.get(posKey(it), 0);
-  bindPlayer(it, saved);
+  it.q = null;
+  const saved = store.get(posKey(it), 0), spare = $("#player2");
+  if (canFade && spare._for === qid(it) && spare.readyState >= 2 && !(saved > 30 && isLong(it))) {
+    p = swapPlayers(fade);                    // already loaded: no gap between songs (and a crossfade, if it's on)
+    bindPlayer(it, 0);
+    p.playbackRate = p.duration >= LONG ? store.get("umc_speed", 1) : 1;
+  } else {
+    p.preload = "auto"; p._xf = false;
+    p.src = srcFor(it);
+    bindPlayer(it, saved);
+  }
   p.play().catch(() => {});
   $("#mini").classList.add("on"); miniFor(it);
   $("#mini-s").textContent = (it.nd_id ? "Loading… " : "Finding the best copy… ") + it.artist; setPP(false);
@@ -1707,9 +1784,11 @@ function bindPlayer(it, startAt) {
   p.ontimeupdate = () => { const pc = p.duration ? p.currentTime * 100 / p.duration : 0; $("#mini-prog").style.width = pc + "%";
     const d = p.currentTime - lastT; if (d > 0 && d < 2 && playedFor === it) it._played += d; lastT = p.currentTime;
     if (p.currentTime > 4) warmNext();
+    if (p.duration && p.duration - p.currentTime < 45) prepNext();
+    if (xfadeOK(p)) { p._xf = true; if (isLong(it)) store.set(posKey(it), 0); pi++; playAt(xfade); return; }
     if (p.currentTime > 4 && keepCook !== "off" && repeatMode === "off" && pi >= pq.length - 2) cookMore();   // cook ahead, so there's no gap
     if (Date.now() - lastSave > 10000) { lastSave = Date.now(); saveQueue(); if (p.duration >= LONG) store.set(posKey(it), p.currentTime); }
-    if (npView === "lyrics") syncLyrics(); else if (videoOn) vidSync();
+    if (npView === "lyrics") syncLyrics(); else { if (videoOn) vidSync(); chapTick(); }
     const r = $("#np-seek"); if (r && !r._drag) { r.value = pc; r.style.setProperty("--pc", pc + "%"); $("#np-cur").textContent = mmss(p.currentTime); $("#np-dur").textContent = "-" + mmss(Math.max(0, (p.duration || 0) - p.currentTime)); }
     if ("mediaSession" in navigator && p.duration && navigator.mediaSession.setPositionState) try { navigator.mediaSession.setPositionState({duration: p.duration, playbackRate: p.playbackRate, position: Math.min(p.currentTime, p.duration)}); } catch (e) {} };
   if ("mediaSession" in navigator) {
@@ -1725,6 +1804,7 @@ function bindPlayer(it, startAt) {
 /* ---------- playback: shuffle, repeat, keep cooking, sleep timer, resume, a queue that survives a reload ---------- */
 const store = {get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }};
+if (canFade) xfade = store.get("umc_xfade", 0);
 let shuffleOn = store.get("umc_shuffle", false), repeatMode = store.get("umc_repeat", "off"), keepCook = store.get("umc_keepcook", "local");
 let cooking = false, sleepAt = 0, sleepEnd = false, sleepTimer = null, unshuffled = null;
 const LONG = 10 * 60;                         // DJ mixes and episodes: remember where you were, allow faster playback
@@ -1862,8 +1942,12 @@ function moreSheet() {
       <button onclick="closeSheet(); openArtistByName(${esc(JSON.stringify((it.artist || "").split(/,| & | x | feat/i)[0].trim()))})">Go to artist</button>
       ${it.nd_id && it.album_id ? `<button onclick="openLibAlbum('${it.album_id}')">Go to album</button>` : ""}
       ${it.nd_id || it.owned ? "" : `<button onclick="keepIt()">Download the best copy</button>`}
+      <button onclick="openStage('karaoke')">Karaoke: full-screen lyrics</button>
+      <button onclick="openStage('visual')">Visualiser</button>
       <button onclick="sleepSheet()">Sleep timer${sleepLeft() ? ` <span class="muted">· ${sleepLeft()}</span>` : ""}</button>
       <button onclick="clearUpcoming()">Clear the songs after this one</button></div>
+    ${canFade ? `<h2>Crossfade</h2><div class="seg">${[0, 3, 6, 10].map(v => `<button class="${xfade === v ? "on" : ""}" onclick="setXfade(${v})">${v ? v + " s" : "Off"}</button>`).join("")}</div>
+      <div class="muted" style="margin:6px 4px 0;font-size:12px">Songs of the same album or mix always flow straight on.</div>` : ""}
     ${isLong(it) ? `<h2>Speed for mixes and episodes</h2><div class="seg">${[0.8, 1, 1.25, 1.5, 2].map(r => `<button class="${sp === r ? "on" : ""}" onclick="setSpeed(${r})">${r}×</button>`).join("")}</div>` : ""}`);
 }
 function clearUpcoming() { pq = pq.slice(0, pi + 1); saveQueue(); toast("Cleared what's next"); renderPlayer(); }
@@ -1898,7 +1982,7 @@ function renderPlayer() {
     <div class="np-meta"><button class="icon nfm" onclick="notForMe()" aria-label="Not for me" title="Not for me: skip it and never cook or suggest it again">${icon("nope", 22)}</button>
       ${heart(it, "big")}<div class="t">${esc(it.title)}</div>
       <div class="s link" onclick="closeSheet(); openArtistByName(${esc(JSON.stringify((it.artist || "").split(/,| & | x | feat/i)[0].trim()))})">${esc(it.artist)}</div>
-      <div class="src-q">${src}</div></div>
+      <div class="src-q">${src}</div>${chapLine(it)}</div>
     <input type="range" id="np-seek" min="0" max="100" step="0.1" value="${pc}" style="--pc:${pc}%" aria-label="Position"
       onpointerdown="this._drag=1" oninput="this.style.setProperty('--pc', this.value + '%'); const pl=$('#player'); $('#np-cur').textContent = mmss(this.value * (pl.duration || 0) / 100)"
       onchange="this._drag=0; const pl=$('#player'); if (pl.duration) pl.currentTime = this.value * pl.duration / 100">
@@ -1914,8 +1998,8 @@ function renderPlayer() {
       <button class="${keepCook !== "off" ? "lit" : ""}" onclick="cookSheet()">${icon("cook")}<span>Cook</span></button>
       <button id="np-sleep" class="${sleepAt || sleepEnd ? "on" : ""}" onclick="sleepSheet()">${icon("moon")}<span>${sleepLeft() || "Sleep"}</span></button>
       ${it.nd_id || it.owned ? `<button disabled class="have">${icon("check")}<span>In library</span></button>` : `<button onclick="keepIt()">${icon("dl")}<span>Download</span></button>`}</div>
-    ${lyr ? `<div id="np-lyr" class="lyr"><div class="empty small"><span class="spin"></span></div></div>`
-      : `<div class="np-up"><div class="np-uph"><h2>Up next${up.length ? ` <span class="count">${up.length}</span>` : ""}</h2>${up.length ? `<button class="link" onclick="clearUpcoming()">Clear</button>` : ""}</div>
+    ${lyr ? `<div style="text-align:right;margin:-4px 0 4px"><button class="btn small ghost" onclick="openStage('karaoke')">${icon("full", 15)} Karaoke</button></div><div id="np-lyr" class="lyr"><div class="empty small"><span class="spin"></span></div></div>`
+      : `<div class="np-up">${chapHTML(it)}<div class="np-uph"><h2>Up next${up.length ? ` <span class="count">${up.length}</span>` : ""}</h2>${up.length ? `<button class="link" onclick="clearUpcoming()">Clear</button>` : ""}</div>
         ${up.length ? up.slice(0, 100).map((q, k) => { const i = pi + 1 + k; return `<div class="qrow" onclick="pi=${i}; playAt()">
           ${artHTML(q, "q-art")}<div class="meta"><div class="t">${esc(q.title)}</div><div class="s">${esc(q.artist)}</div></div>
           ${heart(q, "sm")}${k ? `<button class="icon sm" onclick="event.stopPropagation(); qPlayNext(${i})" aria-label="Play next" title="Play next">${icon("up", 18)}</button>` : ""}
@@ -1928,6 +2012,140 @@ function renderPlayer() {
     $("#np-lyr").innerHTML = l.lines.length ? l.lines.map((x, i) => `<p data-i="${i}" ${l.synced ? `onclick="$('#player').currentTime=${(x.start || 0) / 1000}"` : ""}>${esc(x.value) || "♪"}</p>`).join("") : `<div class="empty small">No lyrics found for this song.</div>`;
     syncLyrics(); }
 }
+/* ---------- the stage: full-screen karaoke and a visualiser ---------- */
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let stageMode = null, stageRAF = 0, stageCalm = 0, actx = null, analyser = null;
+const srcNodes = new WeakMap();
+function stageArt(it) { return it.cover_big || it.cover || ""; }
+async function openStage(mode) {
+  const it = pq[pi]; if (!it) return;
+  stageMode = mode; const st = $("#stage"); st.hidden = false; closeSheet();
+  if (mode === "visual" && !isIOS) audioGraph();               // real sound bars (iPhones keep the music out of reach of pages)
+  try { if (window.innerWidth < 900 && st.requestFullscreen && !document.fullscreenElement) await st.requestFullscreen(); } catch (e) {}
+  renderStage(); stageWake();
+  cancelAnimationFrame(stageRAF); stageRAF = requestAnimationFrame(stageLoop);
+}
+function closeStage() { stageMode = null; cancelAnimationFrame(stageRAF); $("#stage").hidden = true; $("#stage").innerHTML = "";
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); }
+function stageWake() { const st = $("#stage"); st.classList.remove("calm"); clearTimeout(stageCalm); stageCalm = setTimeout(() => st.classList.add("calm"), 3500); }
+async function renderStage() {
+  const it = pq[pi], st = $("#stage"); if (!it || !stageMode) return;
+  st._for = qid(it); st.style.setProperty("--st-art", stageArt(it) ? `url("${stageArt(it)}")` : "none");
+  const b = (m, label, ic) => `<button class="${stageMode === m ? "on" : ""}" onclick="event.stopPropagation(); openStage('${m}')">${icon(ic, 16)}${label}</button>`;
+  st.innerHTML = `<div class="bg"></div><canvas id="st-cv"></canvas><div class="kara" id="st-k"></div><div class="vline" id="st-v"></div>
+    <div class="top"><div class="ttl"><b>${esc(it.title)}</b><span>${esc(it.artist)}</span></div>${b("karaoke", "Karaoke", "lyrics")}${b("visual", "Visualiser", "moon")}
+      <button onclick="event.stopPropagation(); closeStage()" aria-label="Close">${icon("x", 16)}</button></div>
+    <div class="bot"><button onclick="event.stopPropagation(); prevTrack()" aria-label="Previous">${icon("prev", 18)}</button>
+      <button onclick="event.stopPropagation(); togglePlay()" aria-label="Play or pause">${$("#player").paused ? PP_PLAY : PP_PAUSE}</button>
+      <button onclick="event.stopPropagation(); nextTrack()" aria-label="Next">${icon("next", 18)}</button></div>`;
+  st.onclick = stageWake; st.onmousemove = stageWake;
+  const l = await loadLyrics(it); if (pq[pi] !== it || !stageMode) return;
+  st._lyr = l; st._li = -2;
+  if (stageMode === "karaoke") $("#st-k").innerHTML = !l.lines.length ? `<p class="cur" style="--k:100%">♪ ${esc(it.title)} ♪</p><p>No lyrics for this one: enjoy the music</p>`
+    : l.synced ? "" : `<div class="free">${l.lines.map(x => esc(x.value)).join("\n")}</div>`;
+}
+function lyricIndex(l, ms) { let k = -1; for (let i = 0; i < l.lines.length; i++) { if ((l.lines[i].start || 0) <= ms + 150) k = i; else break; } return k; }
+function stageLoop(ts) {
+  const st = $("#stage"), it = pq[pi], p = $("#player");
+  if (!stageMode || !it) return;
+  if (st._for !== qid(it)) renderStage();
+  const l = st._lyr, ms = p.currentTime * 1000;
+  if (l && l.synced && l.lines.length) {
+    const k = lyricIndex(l, ms), line = l.lines[k], nx = l.lines[k + 1];
+    if (stageMode === "karaoke") {
+      if (k !== st._li) { st._li = k; const win = [k - 1, k, k + 1, k + 2];
+        $("#st-k").innerHTML = win.map(i => l.lines[i] ? `<p class="${i === k ? "cur" : i > k ? "nx" : ""}">${esc(l.lines[i].value) || "♪"}</p>` : "<p>&nbsp;</p>").join(""); }
+      const cur = st.querySelector(".kara p.cur");
+      if (cur && line) { const end = nx ? nx.start : line.start + 4000; const f = Math.max(0, Math.min(1, (ms - line.start) / Math.max(400, (end - line.start) * 0.85)));
+        cur.style.setProperty("--k", (f * 100).toFixed(1) + "%"); }
+    } else if (k !== st._li) { st._li = k; $("#st-v").textContent = line ? line.value : ""; }
+  }
+  if (stageMode === "visual") drawVisual(ts, p);
+  else { const cv = $("#st-cv"); if (cv) cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); }
+  const ppb = st.querySelector(".bot button:nth-child(2)"); if (ppb && ppb._p !== p.paused) { ppb._p = p.paused; ppb.innerHTML = p.paused ? PP_PLAY : PP_PAUSE; }
+  stageRAF = requestAnimationFrame(stageLoop);
+}
+function audioGraph() {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume();
+    if (!analyser) { analyser = actx.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.8; analyser.connect(actx.destination); }
+    for (const el of [$("#player"), $("#player2")]) if (!srcNodes.has(el)) { const n = actx.createMediaElementSource(el); n.connect(analyser); srcNodes.set(el, n); }
+  } catch (e) { analyser = null; }
+}
+const vbuf = new Uint8Array(256); let vHue = 0;
+function drawVisual(ts, p) {
+  const cv = $("#st-cv"); if (!cv) return; const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (cv.width !== cv.clientWidth * dpr) { cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr; }
+  const g = cv.getContext("2d"), W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.2;
+  g.clearRect(0, 0, W, H);
+  const n = 96; let lev = [];
+  if (analyser && !p.paused) { analyser.getByteFrequencyData(vbuf); for (let i = 0; i < n; i++) lev.push(vbuf[Math.floor(Math.pow(i / n, 1.6) * 180) + 2] / 255); }
+  else { const bpm = 112, beat = p.paused ? 0 : Math.pow(Math.max(0, Math.cos((p.currentTime * bpm / 60) * Math.PI)), 6);   // calm, in time with a beat
+    for (let i = 0; i < n; i++) lev.push(p.paused ? 0.05 : 0.18 + 0.5 * beat * (0.6 + 0.4 * Math.sin(i * 0.7 + ts / 400)) + 0.12 * Math.sin(ts / 300 + i * 0.35)); }
+  const bass = lev.slice(0, 8).reduce((a, b) => a + b, 0) / 8;
+  vHue = (vHue + 0.15 + bass) % 360;
+  const grad = g.createRadialGradient(cx, cy, R * 0.3, cx, cy, R * (2.2 + bass));
+  grad.addColorStop(0, `hsla(${vHue},90%,60%,${0.25 + bass * 0.4})`); grad.addColorStop(1, "hsla(0,0%,0%,0)");
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  g.lineCap = "round"; g.lineWidth = Math.max(2, R * 0.045);
+  for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2 - Math.PI / 2, v = lev[i], len = R * (0.15 + v * 1.25);
+    g.strokeStyle = `hsl(${(vHue + i * 2.2) % 360},85%,${55 + v * 25}%)`;
+    for (const s of [1, -1]) { const aa = s === 1 ? a : -a + Math.PI; g.beginPath();
+      g.moveTo(cx + Math.cos(aa) * R * 1.05, cy + Math.sin(aa) * R * 1.05); g.lineTo(cx + Math.cos(aa) * (R * 1.05 + len), cy + Math.sin(aa) * (R * 1.05 + len)); g.stroke(); } }
+  const img = drawVisual._img, src = stageArt(pq[pi]);
+  if (src && (!img || img._src !== src)) { const im = new Image(); im._src = src; im.src = src; drawVisual._img = im; }
+  const r = R * (1 + bass * 0.08);
+  g.save(); g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.closePath(); g.clip();
+  if (drawVisual._img?.complete && drawVisual._img.naturalWidth) g.drawImage(drawVisual._img, cx - r, cy - r, r * 2, r * 2); else { g.fillStyle = "#222"; g.fill(); }
+  g.restore();
+}
+document.addEventListener("keydown", e => { if (stageMode && e.key === "Escape") closeStage(); });
+/* ---------- chapters: which song is playing in a mix, from the song finder ---------- */
+const chapCache = {}; let chapIdx = -2;
+function chapFor(it) {
+  if (!it?.nd_id || !isLong(it)) return null;
+  if (!chapCache[it.nd_id]) { chapCache[it.nd_id] = {state: "loading", tracks: []}; loadChap(it); }
+  return chapCache[it.nd_id];
+}
+async function loadChap(it) {
+  const r = await api(`/api/chapters/${it.nd_id}`).catch(() => ({state: "none", tracks: []}));
+  chapCache[it.nd_id] = r; chapIdx = -2;
+  if (["queued", "downloading", "listening"].includes(r.state)) setTimeout(() => { if (pq[pi] === it) loadChap(it); }, 5000);
+  if (pq[pi] === it && npOpen() && npView !== "lyrics") renderPlayer();
+}
+function chapAt(c, t) { let k = -1; (c?.tracks || []).forEach((x, i) => { if (x.t != null && x.t <= t + 1) k = i; }); return k; }
+function chapLine(it) {
+  const c = chapFor(it); if (!c || !c.tracks?.length) return "";
+  const k = chapAt(c, $("#player").currentTime), x = c.tracks[k];
+  return `<div class="np-chap" id="np-chap" onclick="npView='next'; renderPlayer(); document.querySelector('.chap.on')?.scrollIntoView({behavior:'smooth', block:'center'})">${x ? `${icon("queue", 15)}<span>${esc(x.artist)} – ${esc(x.title)}</span>` : ""}</div>`;
+}
+function chapHTML(it) {
+  const c = chapFor(it); if (!c || c.state === "loading") return "";
+  if (c.state === "none") return c.can_find === false ? "" : `<div class="chapbox"><div class="t">Which songs are in this mix?</div>
+    <div class="muted">Umculo listens to the mix on your server and lists every song with its time, so you can see what's playing and jump to it.</div>
+    <button class="btn small" style="margin-top:8px" onclick="findChapters()">Find the songs</button></div>`;
+  if (["queued", "downloading", "listening"].includes(c.state)) return `<div class="chapbox"><div class="t"><span class="spin"></span>Listening to the mix</div>
+    <div class="muted">${esc(c.message || "")}</div><div class="bar"><i style="width:${Math.max(3, c.progress || 0)}%"></i></div></div>`;
+  if (!c.tracks.length) return `<div class="chapbox muted">${esc(c.message || "No songs found in this mix.")}</div>`;
+  const k = chapAt(c, $("#player").currentTime);
+  return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2></div>` + c.tracks.map((x, i) => `<div class="qrow chap${i === k ? " on" : ""}" data-ci="${i}" ${x.t != null ? `onclick="chapSeek(${x.t})"` : ""}>
+      <span class="time">${x.t != null ? hms(x.t) : "–"}</span><div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}${x.owned ? ` · <span class="own">in your library</span>` : ""}</div></div>
+      <button class="icon sm" onclick="event.stopPropagation(); searchFor(${esc(JSON.stringify(x.artist + " " + x.title))})" aria-label="Find this song" title="Find this song">${icon("more", 18)}</button></div>`).join("");
+}
+function chapTick() {
+  const it = pq[pi], c = it && chapCache[it.nd_id]; if (!c || !c.tracks?.length || !npOpen()) return;
+  const k = chapAt(c, $("#player").currentTime); if (k === chapIdx) return; chapIdx = k;
+  const line = $("#np-chap"), x = c.tracks[k];
+  if (line) line.innerHTML = x ? `${icon("queue", 15)}<span>${esc(x.artist)} – ${esc(x.title)}</span>` : "";
+  document.querySelectorAll(".chap").forEach(el => el.classList.toggle("on", +el.dataset.ci === k));
+}
+function chapSeek(t) { const p = $("#player"); p.currentTime = t; if (p.paused) p.play().catch(() => {}); chapIdx = -2; chapTick(); }
+async function findChapters() {
+  const it = pq[pi]; if (!it?.nd_id) return;
+  try { await api(`/api/chapters/${it.nd_id}/find`, {method: "POST"}); toast("Listening to the mix; songs appear here as they're found"); delete chapCache[it.nd_id]; renderPlayer(); }
+  catch (e) { toast(e.message); }
+}
+function searchFor(q) { closeSheet(); show("search"); doSearch(q); }
 /* ---------- video for DJ mixes: a muted picture kept in step with the audio ---------- */
 let videoOn = store.get("umc_video", false); const vidInfo = {};
 const vidEl = document.createElement("video");
@@ -2001,6 +2219,8 @@ document.addEventListener("keydown", e => {   // computers: space plays/pauses, 
   else if (e.key === "ArrowRight") { e.preventDefault(); if (e.shiftKey) nextTrack(); else p.currentTime = Math.min((p.duration || 0) - 1, p.currentTime + 10); }
   else if (e.key === "ArrowLeft") { e.preventDefault(); if (e.shiftKey) prevTrack(); else p.currentTime = Math.max(0, p.currentTime - 10); }
   else if (e.key.toLowerCase() === "l" && npOpen()) showLyrics();
+  else if (e.key.toLowerCase() === "k") stageMode === "karaoke" ? closeStage() : openStage("karaoke");
+  else if (e.key.toLowerCase() === "v") stageMode === "visual" ? closeStage() : openStage("visual");
 });
 
 /* ---------- what's playing? (microphone) ---------- */
@@ -2103,6 +2323,7 @@ function renderArtist() {
       <div class="t" style="font-size:22px;white-space:normal">${esc(a.name)}</div>
       <div class="muted">${a.fans ? fans(a.fans) + " · " : ""}${plural(a.albums.length, "release")}</div></div>
       <button class="icon" onclick="closeSheet()">✕</button></div>
+    <div class="chips" style="margin-top:10px"><button class="btn" onclick="playRadio(${esc(JSON.stringify(a.name))}, this)">${icon("cook", 18)} ${esc(a.name)} radio</button></div>
     <div class="box" style="margin-top:10px">
       <div class="rowline"><div class="meta"><b>${f ? "You follow " + esc(a.name) : "Follow " + esc(a.name)}</b>
         <div class="muted">${f ? "You'll hear about every new release." : "Get told about new releases, in For You and on your phone."}</div></div>
