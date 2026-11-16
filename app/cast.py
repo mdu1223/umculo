@@ -136,15 +136,18 @@ def service(domain, svc, data):
 def speakers():
     if not (CFG["url"] and CFG["token"]):
         return {"ready": False, "speakers": []}
-    out = []
+    out, off = [], []
     for s in ha("GET", "/api/states"):
         e = s.get("entity_id", "")
-        if not e.startswith("media_player.") or s.get("state") == "unavailable":
+        if not e.startswith("media_player."):
+            continue
+        if s.get("state") == "unavailable":
+            off.append((s.get("attributes") or {}).get("friendly_name") or e)
             continue
         a = s.get("attributes") or {}
         out.append({"id": e, "name": a.get("friendly_name") or e.split(".", 1)[1], "state": s.get("state"),
                     "volume": a.get("volume_level"), "mine": e in SESS})
-    return {"ready": True, "speakers": sorted(out, key=lambda x: x["name"].lower())}
+    return {"ready": True, "speakers": sorted(out, key=lambda x: x["name"].lower()), "unavailable": sorted(off)}
 
 
 def base_url():

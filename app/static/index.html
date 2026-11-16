@@ -1508,7 +1508,7 @@ async function castSheet() {
   box.innerHTML = !r.ready ? `<div class="muted" style="margin:4px">Connect Home Assistant to play on any speaker in the house (Sonos, Google, Alexa, smart TVs…).${me?.user?.is_admin ? ` <a href="#" onclick="haSheet(); return false">Set it up</a>` : " Ask the admin to set it up."}</div>`
     : r.error ? `<div class="muted">${esc(r.error)}</div>` : r.speakers.length ? r.speakers.map(x => `<button class="spk-row ${spk === x.id ? "on" : ""}" onclick="spkPlay('${x.id}', ${esc(JSON.stringify(x.name))})">${icon("cast")}
         <span class="meta"><b>${esc(x.name)}</b><div class="muted">${esc(x.state)}${x.mine ? " · playing from Umculo" : ""}</div></span></button>`).join("")
-    : `<div class="muted">Home Assistant has no speakers right now.</div>`;
+    : `<div class="muted">Home Assistant is connected but has no speakers it can play on right now${r.unavailable?.length ? ` (switched off or offline: ${esc(r.unavailable.join(", "))})` : ""}. Add your speakers and TVs to Home Assistant (Settings → Devices &amp; services: Google Cast, Sonos, DLNA, your TV's integration) and they appear here.</div>`;
 }
 async function spkPlay(id, name) {
   const p = $("#player"), items = pq.slice(pi).map(x => ({nd_id: x.nd_id, deezer_id: x.deezer_id, title: x.title, artist: x.artist, album: x.album, cover: x.cover_big || x.cover}));
@@ -1590,6 +1590,7 @@ async function waSheet() {
   let w; try { w = await api("/api/notify/whatsapp"); } catch (e) { return toast(e.message); }
   setPanel(`<div class="grab"></div><div class="np-sub"><button class="icon" onclick="openAccount()" aria-label="Back">${icon("down")}</button><div class="t">WhatsApp</div><span></span></div>
     <div class="muted" style="margin:0 4px 10px">Umculo sends WhatsApp messages through your WAHA server. Messages come from the WhatsApp number signed in to WAHA.</div>
+    ${w.bad_url ? `<div class="box" style="color:var(--low)">The saved WAHA address isn't a web address (the API key may have gone into this box). Put the address here and the key in its own box.</div>` : ""}
     <div class="box"><label class="muted">WAHA address</label><input class="field" id="wa-url" value="${esc(w.url || "")}" placeholder="http://192.168.0.2:3000">
       <label class="muted">API key ${w.key_set ? "(saved; paste a new one to replace it)" : "(if WAHA asks for one)"}</label><input class="field" id="wa-key" type="password" autocomplete="off" placeholder="${w.key_set ? "••••••••" : ""}">
       <label class="muted">Session</label><input class="field" id="wa-session" value="${esc(w.session || "default")}">

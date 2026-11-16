@@ -75,7 +75,7 @@ def ntfy_base():
 
 # --------------------------------------------------------------------------- sending
 def whatsapp(number, text):
-    if not (WA["url"] and number):
+    if not (url_ok() and number):
         return False
     chat = re.sub(r"\D", "", number) + "@c.us"
     rq = urllib.request.Request(WA["url"].rstrip("/") + "/api/sendText", method="POST",
@@ -183,7 +183,7 @@ def view():
     p = prefs()
     p.pop("weekly_sent", None)
     p.pop("gigs_sent", None)
-    return {"prefs": p, "whatsapp_ready": bool(WA["url"]), "ntfy_ready": bool(ntfy_base())}
+    return {"prefs": p, "whatsapp_ready": url_ok(), "ntfy_ready": bool(ntfy_base())}
 
 
 def set_prefs(b):
@@ -222,6 +222,10 @@ def handle_get(path_, _qs):
     return None
 
 
+def url_ok():
+    return bool(re.match(r"^https?://", WA["url"] or ""))
+
+
 def handle_post(path_, b):
     if path_ == "/api/notify":
         return set_prefs(b)
@@ -242,6 +246,8 @@ def handle_post(path_, b):
         for k in ("url", "session"):
             if k in b:
                 data[k] = (b.get(k) or "").strip().rstrip("/")
+        if data.get("url") and not re.match(r"^https?://", data["url"]):
+            raise ValueError("The WAHA address starts with http:// (for example http://192.168.0.2:3000); the API key goes in its own box")
         if b.get("key"):
             data["key"] = b["key"].strip()
         if b.get("forget"):
