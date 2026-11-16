@@ -633,15 +633,31 @@ def start_find(show, e, keep=False, auto=False, owner=None):
     return fid
 
 
-def start_local_find(path, title, show, duration, cover=""):
+def page_tracklist(page):
+    """The description and chapters of the page a mix came from (its tracklist is often there)."""
+    if not page or not page.startswith("http"):
+        return "", []
+    try:
+        with core._ydl({}) as y:
+            info = y.extract_info(page, download=False) or {}
+    except Exception as ex:  # noqa: BLE001
+        log("couldn't read the mix's page:", ex)
+        return "", []
+    return info.get("description") or "", [{"t": int(c.get("start_time") or 0), "title": c.get("title") or ""}
+                                           for c in info.get("chapters") or []]
+
+
+def start_local_find(path, title, show, duration, cover="", page=""):
     """The song finder on a mix that's already in your library: chapters for the player."""
     owner = core.users.me_key()
     with LOCK:
         for f in FINDS.values():
-            if f.get("file") == path and f["state"] != "failed" and (f.get("owner") or "admin") == owner:
+            if f.get("file") == path and f["state"] != "failed" and (f.get("owner") or "admin") == owner \
+                    and not (f["state"] == "done" and not f.get("tracks")):      # found nothing last time: try again
                 return f["id"]
     fid = uuid.uuid4().hex[:12]
-    e = {"id": "local-" + fid, "title": title, "duration": duration, "description": "", "page": ""}
+    desc, chaps = page_tracklist(page)
+    e = {"id": "local-" + fid, "title": title, "duration": duration, "description": desc, "chapters": chaps, "page": page or ""}
     f = {"id": fid, "title": title, "show": show, "cover": cover, "duration": duration, "state": "queued", "progress": 0,
          "message": "Waiting its turn", "tracks": [], "created": time.time(), "keep": False, "auto": False, "local": path,
          "file": path, "show_data": {"kind": "single", "podcast": False, "title": show, "author": show, "cover": cover,

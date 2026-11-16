@@ -46,7 +46,12 @@ def handle_post(path, _b):
         raise PermissionError("The song finder needs download permission")
     r = row(m.group(1))
     show = r["albumartist"] if "albumartist" in r.keys() and r["albumartist"] else (r["album"] or r["artist"] or "Mix")
-    fid = core.links.start_local_find(r["path"], r["title"], show, int(r["duration"] or 0))
+    page = ""
+    try:
+        page = core.video.page_for(r) if core.video.is_mix(r) else ""   # where it came from: its tracklist is often there
+    except Exception:  # noqa: BLE001
+        pass
+    fid = core.links.start_local_find(r["path"], r["title"], show, int(r["duration"] or 0), page=page)
     return {"ok": True, "find": fid}
 
 

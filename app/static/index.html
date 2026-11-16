@@ -435,6 +435,7 @@ nav.tabs button{font-size:11px}
 #stage.calm .top,#stage.calm .bot{opacity:0}
 #stage button{border:0;background:rgba(255,255,255,.14);color:#fff;border-radius:99px;padding:8px 14px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 #stage button.on{background:#fff;color:#000}
+@media (max-width:520px){#stage .top .lb{display:none}#stage .top button{padding:8px 10px}}
 #stage .ttl{flex:1;min-width:0}#stage .ttl b,#stage .ttl span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#stage .ttl span{opacity:.7;font-size:13px}
 #stage .kara{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 7vw;text-align:center;z-index:1;gap:2.2vh}
 #stage .kara p{margin:0;font-weight:800;line-height:1.15;transition:all .35s;opacity:.35;font-size:clamp(18px,3.6vw,34px)}
@@ -2389,7 +2390,7 @@ function stageWake() { const st = $("#stage"); st.classList.remove("calm"); clea
 async function renderStage() {
   const it = pq[pi], st = $("#stage"); if (!it || !stageMode) return;
   st._for = qid(it); st.style.setProperty("--st-art", stageArt(it) ? `url("${stageArt(it)}")` : "none");
-  const b = (m, label, ic) => `<button class="${stageMode === m ? "on" : ""}" onclick="event.stopPropagation(); openStage('${m}')">${icon(ic, 16)}${label}</button>`;
+  const b = (m, label, ic) => `<button class="${stageMode === m ? "on" : ""}" onclick="event.stopPropagation(); openStage('${m}')" aria-label="${label}">${icon(ic, 16)}<span class="lb">${label}</span></button>`;
   st.innerHTML = `<div class="bg"></div><canvas id="st-cv"></canvas><div class="kara" id="st-k"></div><div class="vline" id="st-v"></div>
     <div class="top"><div class="ttl"><b>${esc(it.title)}</b><span>${esc(it.artist)}</span></div>${b("karaoke", "Karaoke", "lyrics")}${b("visual", "Visualiser", "moon")}
       <button onclick="event.stopPropagation(); closeStage()" aria-label="Close">${icon("x", 16)}</button></div>
@@ -2484,7 +2485,8 @@ function chapHTML(it) {
     <button class="btn small" style="margin-top:8px" onclick="findChapters()">Find the songs</button></div>`;
   if (["queued", "downloading", "listening"].includes(c.state)) return `<div class="chapbox"><div class="t"><span class="spin"></span>Listening to the mix</div>
     <div class="muted">${esc(c.message || "")}</div><div class="bar"><i style="width:${Math.max(3, c.progress || 0)}%"></i></div></div>`;
-  if (!c.tracks.length) return `<div class="chapbox muted">${esc(c.message || "No songs found in this mix.")}</div>`;
+  if (!c.tracks.length) return `<div class="chapbox"><div class="muted">${esc(c.message || "No songs found in this mix.")}</div>
+    <button class="btn small ghost" style="margin-top:8px" onclick="findChapters()">Try again</button></div>`;
   const k = chapAt(c, $("#player").currentTime);
   return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2></div>` + c.tracks.map((x, i) => `<div class="qrow chap${i === k ? " on" : ""}" data-ci="${i}" ${x.t != null ? `onclick="chapSeek(${x.t})"` : ""}>
       <span class="time">${x.t != null ? hms(x.t) : "–"}</span><div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}${x.owned ? ` · <span class="own">in your library</span>` : ""}</div></div>

@@ -172,6 +172,23 @@ def context_style(rows_by_id, by_artist, ctx_ids, hint="", seed=None):
     return (fam, cats[fam], artists) if n * 10 >= total * 4 else (None, None, artists)
 
 
+def scene_artists(ctx_ids):
+    """Artists that share playlists with what's been playing: the same scene, not just the same broad style
+    (South African soul and US R&B are both "R&B")."""
+    if not ctx_ids:
+        return set()
+    srv = core.server
+    marks = ",".join("?" * len(ctx_ids))
+    pids = [r["pid"] for r in srv.db.q(f"""SELECT pid, COUNT(*) AS n FROM plsong WHERE song IN ({marks}) GROUP BY pid
+                                          HAVING n >= 2""", tuple(ctx_ids))]
+    if not pids:
+        return set()
+    m2 = ",".join("?" * len(pids))
+    rows = srv.db.q(f"""SELECT song.artist AS a FROM plsong JOIN song ON song.id = plsong.song
+                        WHERE plsong.pid IN ({m2}) AND (SELECT COUNT(*) FROM plsong p2 WHERE p2.pid = plsong.pid) <= 400""", tuple(pids))
+    return {core.norm(core.musicdb.primary(r["a"] or "")) for r in rows if r["a"]}
+
+
 def top_artists(names, k=3):
     count = {}
     for a in names:
@@ -221,9 +238,11 @@ def cook_local(u, seed, n=50, ctx=None, hint=""):
             fam, cat = cf_, cc_
     if not fam:                                   # nothing tagged: ask the catalogue what this artist plays
         fam, cat = dz_style_of(r["artist"], r["title"])
-    heads = top_artists(ctx_artists or [r["artist"]])
+    heads = top_artists(ctx_artists or [r["artist"]], 5)
     rel = related_many(heads)
-    rel_names = {core.norm(a["name"]) for a in rel} | {core.norm(a) for a in heads}
+    rel_names = {core.norm(a["name"]) for a in rel} | {core.norm(a) for a in heads} \
+        | {core.norm(core.musicdb.primary(a)) for a in ctx_artists}   # everyone in the queue is "close"
+    scene = scene_artists(list(ctx or []))
     mine = {r["albumartist_id"], r["artist_id"]}
     year = r["year"] or 0
     same, close, wide = [], [], []
@@ -246,6 +265,7 @@ def cook_local(u, seed, n=50, ctx=None, hint=""):
     lucky = lambda x: random.random() - (0.4 if x["id"] in hearts else 0)
     same.sort(key=lucky)
     same.sort(key=era)
+    same.sort(key=lambda x: 0 if core.norm(core.musicdb.primary(x["artist"])) in scene else 1)   # the queue's scene first
     close.sort(key=lucky)
     picked, seen = [r], {r["id"]}
 
@@ -309,16 +329,16 @@ def cook_new(u, artist, title, n=40, fam=None, cat=None, seeds=None):
     seeds: [(artist, title)] of what's been playing, so the style is the queue's, not one song's."""
     if not fam:
         fam, cat = dz_style_of(artist, title)
-    seeds = (seeds or [])[:4] or [(artist, title)]
+    seeds = (seeds or [])[:12] or [(artist, title)]
     seed_genres = set()
-    for a, t in seeds:
+    for a, t in seeds[-4:]:
         try:
             d = next(iter(core.deezer_search(f"{a} {t}", limit=1)), None)
         except Exception:  # noqa: BLE001
             d = None
         if d:
             seed_genres |= set(dz_album_genres(d.get("album_id")))
-    heads = top_artists([a for a, _t in seeds] + [artist])
+    heads = top_artists([a for a, _t in seeds] + [artist], 5)
     rel = related_many(heads) if len(heads) > 1 else related_names(artist, depth=1 if fam else 2)[0]
     pool = []
 
@@ -362,8 +382,8 @@ def cook_new(u, artist, title, n=40, fam=None, cat=None, seeds=None):
             picked.append(it)
             k += 1
     random.shuffle(pool)
-    if style_pool:                                # half from the artists' circle, half from playlists of exactly this style
-        take(pool, n // 2)
+    if style_pool:                                # mostly the circle of the artists that were playing (their scene);
+        take(pool, n * 3 // 4 if len(heads) > 1 else n // 2)   # playlists of the style only fill in
         take(style_pool, n - len(picked))
     take(pool, n - len(picked))
     out = no_runs(picked, lambda i: core.norm(i["artist"]))
@@ -410,7 +430,7 @@ def handle_get(path, qs):
         cf_, cc_, _a = context_style(by_id, by_artist, ctx, hint, r if not from_dz else None)
         if cf_:
             fam, cat = cf_, cc_
-        seeds = [(by_id[i]["artist"], by_id[i]["title"]) for i in ctx[-6:] if i in by_id]
+        seeds = [(by_id[i]["artist"], by_id[i]["title"]) for i in ctx[-12:] if i in by_id]
     if not artist:
         raise LookupError("Song not found")
     items, label = cook_new(me(), artist, title, n, fam, cat, seeds)
