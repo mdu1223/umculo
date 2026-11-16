@@ -24,6 +24,9 @@
 - **Radio.** Type an artist, a style, a mood or an era ("Kwaito from the 90s", "chill sunday", "Kabza De Small") and it plays forever: your songs first, new ones mixed in.
 - **Gapless and crossfade.** The next song is ready before this one ends; crossfade is a setting (an album or mix always flows straight on).
 - **Karaoke and visualiser.** Full-screen synced lyrics that fill as they're sung, or a visualiser that moves with the music.
+- **Listen together.** Start a room and share the code: everyone hears the same song at the same moment on their own phone, and anyone can add songs.
+- **On this phone.** Save a playlist, album or smart mix to your phone and it plays with no internet (the web app works offline).
+- **Play on speakers and TVs.** AirPlay and Chromecast from the player, and any speaker Home Assistant knows (Sonos, Google, Alexa, smart TVs): Umculo plays the queue there song after song. Set `HA_URL`/`HA_TOKEN`, or connect it in the app.
 - **Watch the mix.** Turn on *Video* while a DJ mix plays and the set's video plays along, in step with the audio. Tick *Also save the video* when you download a mix or subscribe to a show to keep the video too (up to 720p, next to the mix in a hidden `.video` folder).
 - **Tidy-up tools.** One folder per artist, duplicates removed, cover art and lyrics added.
 - **Family accounts.** Everyone gets their own library, playlists and history. You choose what each person can do, and they can ask you for songs.
@@ -87,6 +90,7 @@ Most settings live in the app (**Settings**). These are set in `docker-compose.y
 | `LISTENBRAINZ_USER` | | Better recommendations from your ListenBrainz history |
 | `HOST_PATHS` | `/mnt/Storage/Media=/data` | Host-to-container folder mapping, for reading old playlists that use host paths |
 | `COOK_MIN_SECONDS` | `45` | Shortest song a Cook will include (skips intros and skits) |
+| `HA_URL`, `HA_TOKEN`, `HA_MEDIA_BASE` | | Home Assistant, for playing on speakers (or set it up in the app); `HA_MEDIA_BASE` is the address speakers use to reach Umculo, e.g. `http://192.168.0.2:8095` |
 | `SUPPORT_GITHUB`, `SUPPORT_KOFI` | project links | Donation links in Settings (blank to hide) |
 
 ## Putting it on the internet

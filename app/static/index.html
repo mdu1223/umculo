@@ -442,6 +442,13 @@ nav.tabs button{font-size:11px}
 #stage .kara p.nx{opacity:.55}
 #stage .kara .free{overflow:auto;max-height:70vh;font-size:clamp(18px,3vw,26px);font-weight:700;line-height:1.5;opacity:.9;white-space:pre-line}
 #stage .vline{position:absolute;left:0;right:0;bottom:calc(86px + env(safe-area-inset-bottom));text-align:center;font-weight:800;font-size:clamp(18px,3.6vw,30px);padding:0 6vw;z-index:1;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+.off-card{background:linear-gradient(135deg,color-mix(in srgb,var(--lossless) 30%,var(--panel)),var(--panel))}
+.np-topr{display:flex;gap:8px}.np-top .icon.lit{background:var(--accent);color:var(--accent-ink)}
+.spk-row{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;cursor:pointer;width:100%;border:0;background:none;color:var(--ink);font:inherit;text-align:left}
+.spk-row:hover,.spk-row.on{background:color-mix(in srgb,var(--ink) 7%,transparent)}.spk-row.on{color:var(--accent)}
+.spk-row .meta{flex:1}.spk-row .muted{font-size:12px}
+.party-code{font-size:38px;font-weight:900;letter-spacing:.18em;text-align:center;margin:8px 0 2px;font-variant-numeric:tabular-nums}
+.who{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.who span{padding:4px 10px;border-radius:99px;background:color-mix(in srgb,var(--ink) 8%,transparent);font-size:13px;font-weight:650}
 .radio-in{display:flex;gap:8px;margin:0 0 10px}.radio-in .field{flex:1;margin:0}
 .rtile{flex:none;width:150px;height:96px;border:0;border-radius:16px;padding:12px;text-align:left;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;cursor:pointer;color:#fff;
   background:linear-gradient(135deg,hsl(var(--h) 65% 42%),hsl(calc(var(--h) + 50) 70% 28%))}
@@ -731,9 +738,10 @@ function songMenu(kind, i) {
     </div>`);
 }
 function queueSong(it, next) {
+  if (party && !party.dj) return partyAdd(it, next);
   if (!pq.length || $("#player").paused && !$("#player").currentTime) { playList([it], 0); return; }
   if (next) pq.splice(pi + 1, 0, it); else pq.push(it);
-  toast(next ? "Playing next" : "Added to the queue");
+  toast(next ? "Playing next" : "Added to the queue"); partyPush();
 }
 async function findText(text) {
   openSheet(`<div class="grab"></div><div class="empty"><span class="spin"></span> Starting…</div>`);
@@ -1096,12 +1104,14 @@ async function playLibPl(id, shuffle, at, smart) {
 async function openLibPl(id, smart) {
   delete LIBPL[id]; let d; try { d = await libPlSongs(id, smart); } catch (e) { return toast(e.message); }
   const total = d.songs.reduce((a, x) => a + (x.duration || 0), 0), sid = (smart ? "smart-" : "") + id;
+  LISTS.LIBPL_OFF = d.songs.map(libSong);
   openSheet(`<div class="grab"></div><div class="rowline"><div class="meta"><div class="t" style="white-space:normal;font-size:20px;font-weight:800">${esc(d.name)}</div>
       <div class="muted">${plural(d.songs.length, "song")}${total ? " · " + fmtLen(total) : ""}${d.comment ? " · " + esc(d.comment) : ""}</div></div>
       <button class="icon" onclick="closeSheet()" aria-label="Close">✕</button></div>
     ${d.songs.length ? `<div class="pl-play"><button class="btn" onclick="playLibPl('${id}', false, 0, ${!!smart})">${PP_PLAY.replace(/24/g, "18")} Play</button>
       <button class="btn ghost" onclick="playLibPl('${id}', true, 0, ${!!smart})">${icon("shuffle", 18)} Shuffle</button>
-      ${smart && !["liked", "repeat", "fresh"].includes(id) ? `<button class="btn ghost" onclick="openLibPl('${id}', true)">New batch</button>` : ""}</div>` : ""}
+      ${smart && !["liked", "repeat", "fresh"].includes(id) ? `<button class="btn ghost" onclick="openLibPl('${id}', true)">New batch</button>` : ""}
+      ${offBtn(sid, d.name, "LIBPL_OFF")}</div>` : ""}
     ${smart ? "" : `<div class="chips" style="margin:10px 0"><button class="btn small ghost" onclick="delLibPl('${id}', ${esc(JSON.stringify(d.name))})">Delete playlist</button></div>`}
     <div class="box">${d.songs.map((x, i) => `<div class="trk"><div class="rowline can" data-sid="${x.id}" onclick="if (!event.target.closest('button')) playLibPl('${id}', false, ${i}, ${!!smart})">
       ${artHTML(libSong(x), "q-art")}<div class="meta"><b>${esc(x.title)}</b> <span class="muted">${esc(x.artist)}</span></div>
@@ -1456,6 +1466,215 @@ function askStation() {
     <button class="btn" style="width:100%" onclick="playStation($('#st-vibe').value, this)">Play it</button>`);
   setTimeout(() => $("#st-vibe")?.focus(), 50);
 }
+/* ---------- stream key: lets speakers and TVs (and a shared room) fetch songs without signing in ---------- */
+let streamKey = "";
+async function getStreamKey() {
+  try { const r = await api("/api/cast/key"); streamKey = r.key; setTimeout(getStreamKey, Math.max(60, (r.exp - Date.now() / 1000) / 2) * 1000); } catch (e) {}
+}
+/* ---------- play on: AirPlay, Chromecast, Home Assistant speakers ---------- */
+let spk = null, spkTimer = null;
+const remoteOn = () => { const p = $("#player"); return !!(p.remote && p.remote.state && p.remote.state !== "disconnected"); };
+async function castSheet() {
+  const p = $("#player");
+  const air = !!window.WebKitPlaybackTargetAvailabilityEvent, chrome = !!(p.remote && !isIOS);
+  setPanel(`<div class="grab"></div><div class="np-sub"><button class="icon" onclick="renderPlayer()" aria-label="Back">${icon("down")}</button><div class="t">Play on</div><span></span></div>
+    <button class="spk-row ${!spk && !remoteOn() ? "on" : ""}" onclick="spkStop(); renderPlayer()">${icon("lyrics")}<span class="meta"><b>This ${isIOS || /Android/.test(navigator.userAgent) ? "phone" : "browser"}</b></span></button>
+    ${air ? `<button class="spk-row" onclick="$('#player').webkitShowPlaybackTargetPicker()">${icon("cast")}<span class="meta"><b>AirPlay</b><div class="muted">Apple TV, HomePod, AirPlay speakers</div></span></button>` : ""}
+    ${chrome ? `<button class="spk-row ${remoteOn() ? "on" : ""}" onclick="$('#player').remote.prompt().catch(e => toast(e.name === 'NotFoundError' ? 'No TVs or speakers found nearby' : e.message))">${icon("cast")}<span class="meta"><b>Chromecast and TVs</b><div class="muted">Devices on this Wi-Fi</div></span></button>` : ""}
+    <h2>Home speakers</h2><div id="spk-list"><div class="empty small"><span class="spin"></span></div></div>`);
+  let r; try { r = await api("/api/speakers"); } catch (e) { r = {ready: true, speakers: [], error: e.message}; }
+  const box = $("#spk-list"); if (!box) return;
+  box.innerHTML = !r.ready ? `<div class="muted" style="margin:4px">Connect Home Assistant to play on any speaker in the house (Sonos, Google, Alexa, smart TVs…).${me?.user?.is_admin ? ` <a href="#" onclick="haSheet(); return false">Set it up</a>` : " Ask the admin to set it up."}</div>`
+    : r.error ? `<div class="muted">${esc(r.error)}</div>` : r.speakers.length ? r.speakers.map(x => `<button class="spk-row ${spk === x.id ? "on" : ""}" onclick="spkPlay('${x.id}', ${esc(JSON.stringify(x.name))})">${icon("cast")}
+        <span class="meta"><b>${esc(x.name)}</b><div class="muted">${esc(x.state)}${x.mine ? " · playing from Umculo" : ""}</div></span></button>`).join("")
+    : `<div class="muted">Home Assistant has no speakers right now.</div>`;
+}
+async function spkPlay(id, name) {
+  const p = $("#player"), items = pq.slice(pi).map(x => ({nd_id: x.nd_id, deezer_id: x.deezer_id, title: x.title, artist: x.artist, album: x.album, cover: x.cover_big || x.cover}));
+  try { await api(`/api/speakers/${id}/play`, {method: "POST", body: JSON.stringify({items, start: 0, position: p.currentTime || 0})});
+    p.pause(); spk = id; spkName = name; toast(`Playing on ${name}`); spkPoll(); spkSheet(); }
+  catch (e) { toast(e.message); }
+}
+let spkName = "", spkState = null;
+async function spkPoll() {
+  clearTimeout(spkTimer); if (!spk) return;
+  try { spkState = await api(`/api/speakers/${spk}`); } catch (e) { spkState = null; }
+  if (spkState && !spkState.item) { spk = null; spkState = null; toast("The speaker finished"); }
+  if (spkState) { $("#mini").classList.add("on"); $("#mini-t").textContent = spkState.item.title; $("#mini-s").textContent = `On ${spkName} · ${spkState.item.artist}`; setPP(!spkState.playing); }
+  if ($("#spk-now")) spkSheet();
+  if (spk) spkTimer = setTimeout(spkPoll, 3000);
+}
+async function spkDo(a, v) { if (!spk) return; try { spkState = await api(`/api/speakers/${spk}/${a}`, {method: "POST", body: JSON.stringify({v})}); if (spkState.stopped) { spk = null; } } catch (e) { toast(e.message); } spkPoll(); }
+function spkStop() { if (spk) { spkDo("stop"); spk = null; toast("Back on this device"); } }
+function spkSheet() {
+  const s = spkState, it = s?.item; if (!spk) return renderPlayer();
+  setPanel(`<div class="grab"></div><div class="np-sub"><button class="icon" onclick="castSheet()" aria-label="Back">${icon("down")}</button><div class="t">On ${esc(spkName)}</div><span></span></div>
+    <div id="spk-now" class="np">${it ? artHTML(it, "np-art") : ""}<div class="np-meta"><div class="t">${esc(it?.title || "")}</div><div class="s">${esc(it?.artist || "")}</div>
+      <div class="src-q">${s ? `Song ${s.i + 1} of ${s.count}${s.position ? " · " + mmss(s.position) : ""}` : ""}</div></div>
+    <div class="ctrl"><span></span><button class="skip" onclick="spkDo('prev')" aria-label="Previous">${icon("prev", 30)}</button>
+      <button class="pp" onclick="spkDo('${s?.playing ? "pause" : "resume"}')">${s?.playing ? PP_PAUSE.replace(/24/g, "30") : PP_PLAY.replace(/24/g, "30")}</button>
+      <button class="skip" onclick="spkDo('next')" aria-label="Next">${icon("next", 30)}</button><span></span></div>
+    ${s?.volume != null ? `<input type="range" min="0" max="100" value="${Math.round(s.volume * 100)}" style="width:100%" aria-label="Volume" onchange="spkDo('volume', this.value / 100)">` : ""}
+    <button class="btn ghost" style="margin-top:14px" onclick="spkStop(); renderPlayer()">Stop and play here</button></div>`);
+}
+async function haSheet() {
+  let h = {}; try { h = await api("/api/ha"); } catch (e) { return toast(e.message); }
+  setPanel(`<div class="grab"></div><div class="np-sub"><button class="icon" onclick="castSheet()" aria-label="Back">${icon("down")}</button><div class="t">Home Assistant</div><span></span></div>
+    <div class="muted" style="margin:0 4px 10px">Umculo sends songs to your speakers through Home Assistant. In Home Assistant: your profile → Security → Long-lived access tokens → Create. Paste it here (it's kept on your server and never shown again).</div>
+    <div class="box"><label class="muted">Home Assistant address</label><input class="field" id="ha-url" value="${esc(h.url || "")}" placeholder="http://192.168.0.2:8123">
+    <label class="muted">Access token ${h.token_set ? "(saved; paste a new one to replace it)" : ""}</label><input class="field" id="ha-token" type="password" autocomplete="off" placeholder="${h.token_set ? "••••••••" : "Paste the token"}">
+    <label class="muted">The address speakers use to reach Umculo</label><input class="field" id="ha-base" value="${esc(h.media_base || "")}" placeholder="http://192.168.0.2:8095">
+    <div class="chips"><button class="btn" onclick="haSave()">Save</button>${h.token_set ? `<button class="btn ghost" onclick="haSave(true)">Disconnect</button>` : ""}</div>
+    <div class="muted" style="margin-top:8px">${esc(h.message || "")}</div></div>`);
+}
+async function haSave(forget) {
+  const body = forget ? {forget: true} : {url: $("#ha-url").value, token: $("#ha-token").value, media_base: $("#ha-base").value};
+  try { const r = await api("/api/ha", {method: "POST", body: JSON.stringify(body)}); toast(r.ok ? "Home Assistant connected" : r.message); haSheet(); }
+  catch (e) { toast(e.message); }
+}
+/* ---------- listen together ---------- */
+let party = null, partyTimer = null, partyVer = 0, partyQSig = "", partyPushT = null;
+const pItem = x => ({nd_id: x.nd_id, deezer_id: x.deezer_id, title: x.title, artist: x.artist, album: x.album, album_id: x.album_id, cover: x.cover, cover_big: x.cover_big, duration: x.duration, year: x.year});
+async function partyStart() {
+  const p = $("#player"); if (!pq.length) return toast("Play something first, then start a room");
+  try { party = await api("/api/party", {method: "POST", body: JSON.stringify({queue: pq.map(pItem), i: pi, position: p.currentTime || 0, playing: !p.paused, rate: p.playbackRate})});
+    partyVer = party.ver; partyQSig = pq.map(qid).join(); partyLoop(); partySheet(); toast("Room open: share the code"); }
+  catch (e) { toast(e.message); }
+}
+function partyPush() {                       // the DJ's player leads: song, position, play/pause, the queue
+  if (!party || !party.dj) return;
+  clearTimeout(partyPushT); partyPushT = setTimeout(async () => {
+    const p = $("#player"), sig = pq.map(qid).join(), body = {i: pi, position: p.currentTime || 0, playing: !p.paused, rate: p.playbackRate};
+    if (sig !== partyQSig) body.queue = pq.map(pItem);
+    try { const r = await api(`/api/party/${party.code}/state`, {method: "POST", body: JSON.stringify(body)}); partyQSig = sig; party = r; partyVer = r.ver; } catch (e) { partyGone(e); }
+  }, 250);
+}
+async function partyJoin(code) {
+  code = (code || "").trim().toUpperCase(); if (!/^[A-Z0-9]{5}$/.test(code)) return toast("A room code is 5 letters and numbers");
+  try { party = await api(`/api/party/${code}/join`, {method: "POST", body: "{}"}); partyVer = -1; partyFollow(true); partyLoop();
+    toast(`You're in ${party.dj_name}'s room`); openPlayer(); }
+  catch (e) { toast(e.message); }
+}
+function partyFromLink() { const c = new URLSearchParams(location.search).get("party"); if (c && !party) { history.replaceState(null, "", "/"); partyJoin(c); } }
+function partyFollow(force) {                // a guest: same song, same moment
+  const r = party; if (!r || r.dj) return;
+  const p = $("#player"), sig = r.queue.map(qid).join();
+  if (force || sig !== partyQSig) { const cur = pq[pi]; pq = r.queue.map(x => ({...x, _k: r.key})); partyQSig = sig; if (cur && qid(cur) === qid(pq[r.i] || {})) pi = r.i; }
+  nowSrc = {id: "party", name: `${r.dj_name}'s room`};
+  const want = pq[r.i]; if (!want) return;
+  const target = r.position + (r.playing ? 0.3 : 0);  // the server says where the DJ is "now"; allow for the trip here
+  if (pi !== r.i || !p.src || force) { pi = r.i; playAt(); $("#player")._seekTo = target; return; }
+  if (p.readyState >= 1 && Math.abs(p.currentTime - target) > 2) p.currentTime = target; else if (p.readyState < 1) p._seekTo = target;
+  if (r.playing && p.paused) p.play().catch(() => {}); else if (!r.playing && !p.paused) p.pause();
+}
+async function partyLoop() {
+  clearTimeout(partyTimer); if (!party) return;
+  try {
+    const r = await api(`/api/party/${party.code}`);
+    const was = party; party = r;
+    if (r.dj) {
+      if (r.ver !== partyVer && r.queue.map(qid).join() !== pq.map(qid).join()) {     // a guest added songs
+        const cur = pq[pi]; pq = r.queue.map(x => pq.find(y => qid(y) === qid(x)) || x); pi = Math.max(0, pq.findIndex(x => cur && qid(x) === qid(cur)));
+        partyQSig = pq.map(qid).join(); saveQueue(); const last = r.added[r.added.length - 1]; if (last) toast(`${last.by} added ${last.title}`);
+        if (npOpen() && npView === "next") renderPlayer();
+      }
+      partyVer = r.ver;
+    } else if (r.ver !== partyVer || Math.abs($("#player").currentTime - r.position) > 2) { partyVer = r.ver; partyFollow(false); }
+    if ($("#party-box")) partySheet();
+  } catch (e) { return partyGone(e); }
+  partyTimer = setTimeout(partyLoop, party?.dj ? 3000 : 2000);
+}
+function partyGone(e) { clearTimeout(partyTimer); if (party) toast(e?.message || "The room closed"); party = null; if (npOpen()) renderPlayer(); }
+async function partyAdd(it, next) {
+  try { party = await api(`/api/party/${party.code}/add`, {method: "POST", body: JSON.stringify({item: pItem(it), next})}); toast(next ? "Added to play next in the room" : "Added to the room's queue"); partyFollow(false); }
+  catch (e) { toast(e.message); }
+}
+async function partyLeave() {
+  if (!party) return; const r = party;
+  try { await api(`/api/party/${r.code}/${r.dj ? "end" : "leave"}`, {method: "POST", body: "{}"}); } catch (e) {}
+  clearTimeout(partyTimer); party = null; toast(r.dj ? "Room closed" : "You left the room");
+  if (!r.dj) pq = pq.map(x => { const y = {...x}; delete y._k; return y; });
+  renderPlayer();
+}
+function partyLink() { return `${location.origin}/?party=${party.code}`; }
+async function partyShare() {
+  const text = `Listen with me on Umculo: ${partyLink()} (room ${party.code})`;
+  try { if (navigator.share) await navigator.share({title: "Listen together", text, url: partyLink()}); else { await navigator.clipboard.writeText(text); toast("Link copied"); } } catch (e) {}
+}
+function partySheet() {
+  const r = party;
+  setPanel(`<div class="grab"></div><div class="np-sub"><button class="icon" onclick="renderPlayer()" aria-label="Back">${icon("down")}</button><div class="t">Listen together</div><span></span></div>
+    ${r ? `<div id="party-box"><div class="muted" style="text-align:center">${r.dj ? "You're the DJ: everyone hears what you play, and can add songs" : `In ${esc(r.dj_name)}'s room: you hear what they play, and can add songs`}</div>
+      <div class="party-code">${r.code}</div>
+      <div class="chips" style="justify-content:center">${r.dj ? `<button class="btn" onclick="partyShare()">Invite</button>` : ""}<button class="btn ghost" onclick="partyLeave()">${r.dj ? "Close the room" : "Leave"}</button></div>
+      <h2>Here now <span class="count">${r.members.length}</span></h2><div class="who">${r.members.map(m => `<span>${esc(m.name)}${m.dj ? " · DJ" : ""}${m.you ? " (you)" : ""}</span>`).join("")}</div>
+      ${r.added.length ? `<h2>Added</h2><div class="muted">${r.added.slice().reverse().map(a => `${esc(a.by)}: ${esc(a.title)}`).join("<br>")}</div>` : ""}
+      <div class="muted" style="margin-top:12px">Everyone signs in with their own account on this server. To add a song, use “Play next” or “Add to queue” on any song.</div></div>`
+    : `<div class="muted" style="margin:0 4px 12px">Everyone hears the same song at the same moment on their own phone: a party, a road trip, or two rooms of the house.</div>
+      <button class="btn" style="width:100%" onclick="partyStart()">Start a room with what's playing</button>
+      <h2>Join a room</h2><form class="radio-in" onsubmit="event.preventDefault(); partyJoin(this.c.value)"><input class="field" name="c" placeholder="Room code" maxlength="5" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase;letter-spacing:.15em"><button class="btn">Join</button></form>`}`);
+}
+/* ---------- on this phone: playlists, albums and mixes saved for when there's no internet ---------- */
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+const offStore = () => store.get("umc_off", {songs: {}, lists: {}});
+const offKey = u => new URL(u, location.href).pathname;
+let offBusy = null;
+function offBtn(id, name, listKey, small) {
+  const saved = !!offStore().lists[id];
+  if (!("caches" in window)) return "";
+  return `<button class="btn ${small ? "small " : ""}ghost" onclick="${saved ? `offRemove('${id}')` : `offSave('${id}', ${esc(JSON.stringify(name))}, LISTS['${listKey}'], this)`}">${saved ? icon("check", 16) + " On this phone" : icon("dl", 16) + " Save to phone"}</button>`;
+}
+async function offSave(id, name, list, btn) {
+  if (offBusy) return toast("Still saving the last one");
+  list = (list || []).filter(x => x.nd_id || x.deezer_id); if (!list.length) return;
+  try { await navigator.storage?.persist?.(); } catch (e) {}
+  const c = await caches.open("umc-offline"), cv = await caches.open("umc-covers"), st = offStore();
+  offBusy = {id, done: 0, total: list.length}; let failed = 0;
+  if (btn) btn.disabled = true;
+  for (const it of list) {
+    const k = qid(it), path = offKey(srcFor(it));
+    try {
+      if (!(await c.match(path))) { const r = await fetch(srcFor(it)); if (!r.ok) throw new Error(r.status); await c.put(path, r); }
+      const cu = it.cover_big || it.cover; if (cu && cu.startsWith("/api/ndcover/")) { const u = new URL(cu, location.href), ck = u.pathname + "?s=" + (u.searchParams.get("s") || "");
+        if (!(await cv.match(ck))) { const r = await fetch(cu); if (r.ok) await cv.put(ck, r); } }
+      st.songs[k] = {nd_id: it.nd_id, deezer_id: it.deezer_id, title: it.title, artist: it.artist, album: it.album, album_id: it.album_id, cover: it.cover, duration: it.duration, path};
+    } catch (e) { failed++; }
+    offBusy.done++; if (btn) btn.innerHTML = `<span class="spin"></span>${offBusy.done}/${offBusy.total}`;
+  }
+  st.lists[id] = {name, ids: list.map(qid).filter(k => st.songs[k]), at: Date.now()};
+  store.set("umc_off", st); offBusy = null;
+  if (btn && btn.isConnected) { btn.disabled = false; btn.outerHTML = offBtn(id, name, "", btn.classList.contains("small")); }
+  toast(failed ? `Saved ${list.length - failed} of ${list.length} to this phone` : `“${name}” is on this phone: it plays without the internet`);
+}
+async function offRemove(id) {
+  const st = offStore(), l = st.lists[id]; if (!l) return;
+  if (!confirm(`Remove “${l.name}” from this phone? It stays in your library.`)) return;
+  delete st.lists[id];
+  const still = new Set(Object.values(st.lists).flatMap(x => x.ids)), c = await caches.open("umc-offline");
+  for (const k of l.ids) if (!still.has(k) && st.songs[k]) { await c.delete(st.songs[k].path); delete st.songs[k]; }
+  store.set("umc_off", st); toast("Removed from this phone"); closeSheet(); if (!$("#view-library").hidden) loadLibrary();
+}
+const offItems = l => l.ids.map(k => offStore().songs[k]).filter(Boolean);
+async function openOffline() {
+  const st = offStore(); let used = "";
+  try { const e = await navigator.storage.estimate(); used = ` · ${gbs(e.usage)} used`; } catch (e) {}
+  const lists = Object.entries(st.lists).sort((a, b) => b[1].at - a[1].at);
+  LISTS.offall = lists.flatMap(([, l]) => offItems(l)).filter((x, i, a) => a.findIndex(y => qid(y) === qid(x)) === i);
+  openSheet(`<div class="grab"></div><div class="rowline"><div class="meta"><div class="t" style="font-size:20px;font-weight:800">On this phone</div>
+      <div class="muted">${plural(Object.keys(st.songs).length, "song")}${used}${navigator.onLine ? "" : " · you're offline"}</div></div>
+      <button class="icon" onclick="closeSheet()" aria-label="Close">✕</button></div>
+    <div class="pl-play"><button class="btn" onclick="playList(LISTS.offall, 0, {id: 'offline', name: 'On this phone'})">${PP_PLAY.replace(/24/g, "18")} Play all</button>
+      <button class="btn ghost" onclick="shuffleOn = false; toggleShuffle(); playList(LISTS.offall, 0, {id: 'offline', name: 'On this phone'})">${icon("shuffle", 18)} Shuffle</button></div>
+    <div class="box">${lists.map(([id, l]) => `<div class="rowline trk"><div class="meta" onclick="playList(offItems(offStore().lists['${id}']), 0, {id: '${id}', name: ${esc(JSON.stringify(l.name))}})">
+      <b>${esc(l.name)}</b><div class="muted">${plural(l.ids.length, "song")}</div></div>
+      <button class="icon" title="Remove from this phone" onclick="offRemove('${id}')">✕</button></div>`).join("")}</div>`);
+}
+function offlineStart() {
+  try { me = JSON.parse(localStorage.getItem("umc_me") || "null") || {user: {}}; } catch (e) { me = {user: {}}; }
+  if (!Object.keys(offStore().lists).length) return toast("No connection to your server, and nothing saved on this phone yet");
+  toast("You're offline: playing what's saved on this phone"); openOffline();
+}
+window.addEventListener("online", () => { if (!me?.user?.id) whoami(); });
 /* ---------- radio: an artist, style, mood or era; keep cooking carries it on forever ---------- */
 let radioSt = null;
 async function playRadio(q, btn) {
@@ -1598,7 +1817,10 @@ const CAN = (() => {                         // what this browser plays as-is: t
     flac: "audio/flac", opus: 'audio/ogg; codecs="opus"', ogg: 'audio/ogg; codecs="vorbis"', wav: "audio/wav"};
   try { return Object.keys(t).filter(k => a.canPlayType(t[k])).join(","); } catch (e) { return "mp3"; }
 })();
-function srcFor(it) { return it.nd_id ? `/api/ndstream/${it.nd_id}?can=${CAN}` : `/api/stream/${it.deezer_id}`; }
+function srcFor(it) {                         // the stream key lets AirPlay, Chromecast and the DJ's songs in a shared room play
+  const k = it._k || streamKey;
+  return it.nd_id ? `/api/ndstream/${it.nd_id}?can=${CAN}${k ? "&k=" + k : ""}` : `/api/stream/${it.deezer_id}${k ? "?k=" + k : ""}`;
+}
 /* gapless and crossfade: the next song loads in a second player and takes over the moment this one ends */
 const canFade = (() => { try { const a = new Audio(); a.volume = 0.5; return a.volume === 0.5; } catch (e) { return false; } })();
 let xfade = 0;                                // read once the saved settings are set up (below)
@@ -1750,7 +1972,7 @@ function playAt(fade) {
   reportListen();
   it.q = null;
   const saved = store.get(posKey(it), 0), spare = $("#player2");
-  if (canFade && spare._for === qid(it) && spare.readyState >= 2 && !(saved > 30 && isLong(it))) {
+  if (canFade && !remoteOn() && spare._for === qid(it) && spare.readyState >= 2 && !(saved > 30 && isLong(it))) {
     p = swapPlayers(fade);                    // already loaded: no gap between songs (and a crossfade, if it's on)
     bindPlayer(it, 0);
     p.playbackRate = p.duration >= LONG ? store.get("umc_speed", 1) : 1;
@@ -1769,15 +1991,17 @@ function bindPlayer(it, startAt) {
   const p = $("#player"); let lastT = 0, lastSave = 0, resumed = !startAt;
   playedFor = it; it._played = 0;
   p.onloadedmetadata = () => {
+    if (p._seekTo != null) { p.currentTime = p._seekTo; p._seekTo = null; resumed = true; }
     if (!resumed && startAt > 30 && p.duration >= LONG && startAt < p.duration - 30) { p.currentTime = startAt; toast(`Carrying on from ${mmss(startAt)}`); }
     else if (!resumed && startAt && p.duration < LONG) p.currentTime = startAt;     // a restored queue: back to where you were
     resumed = true;
     p.playbackRate = p.duration >= LONG ? store.get("umc_speed", 1) : 1;
   };
-  p.onplaying = () => { errRun = 0; vidSync(); $("#mini-s").textContent = it.artist + (it.q ? " · " + it.q.quality : ""); setPP(false); if (npOpen()) renderPlayer();
+  p.onplaying = () => { errRun = 0; vidSync(); partyPush(); $("#mini-s").textContent = it.artist + (it.q ? " · " + it.q.quality : ""); setPP(false); if (npOpen()) renderPlayer();
     if (!it.q) api(it.nd_id ? `/api/streaminfo/nd/${it.nd_id}?can=${CAN}` : `/api/streaminfo/d/${it.deezer_id}`).then(q => {
       if (!q.quality) return; it.q = q; if (pq[pi] === it) { $("#mini-s").textContent = it.artist + " · " + q.quality; if (npOpen() && npView !== "lyrics") renderPlayer(); } }).catch(() => {}); };
-  p.onpause = () => { vidSync(); setPP(true); saveQueue(); if (p.duration >= LONG) store.set(posKey(it), p.currentTime); };
+  p.onseeked = () => partyPush();
+  p.onpause = () => { vidSync(); partyPush(); setPP(true); saveQueue(); if (p.duration >= LONG) store.set(posKey(it), p.currentTime); };
   p.onended = () => { if (isLong(it)) store.set(posKey(it), 0); advance(true); };
   p.onerror = () => { if (!p.src || p.src === location.href) return; errRun++; toast(errRun >= 3 ? "Several songs wouldn't play; stopped. Check the status page." : "Couldn't play " + it.title);
     $("#mini-s").textContent = "Couldn't play this one · " + it.artist; setPP(true); if (errRun < 3 && pi < pq.length - 1) nextTrack(); };
@@ -1821,6 +2045,8 @@ const IC = {
   moon: `<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>`,
   nope: `<circle cx="12" cy="12" r="8.5"/><path d="m6.2 6.200 11.600 11.600"/>`,
   more: `<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>`,
+  cast: `<path d="M3 17a4 4 0 0 1 4 4M3 13a8 8 0 0 1 8 8M3 9.5A11.5 11.5 0 0 1 14.5 21"/><path d="M7 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/>`,
+  people: `<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/>`,
   video: `<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10.5 5-3v9l-5-3z"/>`,
   full: `<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>`,
   down: `<path d="m6 9 6 6 6-6"/>`, dl: `<path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/>`, check: `<path d="m5 12.5 4.5 4.5L19 7"/>`, x: `<path d="M6 6l12 12M18 6 6 18"/>`, up: `<path d="m6 15 6-6 6 6"/>`,
@@ -1859,9 +2085,10 @@ function miniFor(it) {
   $("#mini-t").textContent = it.title;
 }
 function posKey(it) { return "umc_pos_" + qid(it); }
-function nextTrack() { advance(false); }
+function nextTrack() { if (spk) return spkDo("next"); advance(false); }
 async function advance(natural) {
   const p = $("#player");
+  if (party && !party.dj) { if (natural) p.pause(); else toast("The DJ chooses the songs; you can add some"); return; }   // in a room the DJ leads
   if (natural && sleepEnd) { sleepEnd = false; updateSleep(); p.pause(); toast("Sleep timer: stopped after that song"); return; }
   if (natural && repeatMode === "one") { p.currentTime = 0; p.play().catch(() => {}); return; }
   if (pi < pq.length - 1) { pi++; return playAt(); }
@@ -1870,7 +2097,7 @@ async function advance(natural) {
   p.pause(); if (natural) toast("That's the end of the queue");
 }
 async function cookMore() {                  // the queue's running out: cook more in the same style
-  if (cooking || keepCook === "off" || !pq.length) return false;
+  if (cooking || keepCook === "off" || !pq.length || (party && !party.dj)) return false;
   const seed = [...pq].reverse().find(x => x.nd_id) && keepCook === "local" ? [...pq].reverse().find(x => x.nd_id) : pq[pq.length - 1];
   cooking = true;
   const have = new Set(pq.map(qid));
@@ -1893,8 +2120,10 @@ async function cookMore() {                  // the queue's running out: cook mo
     return true;
   } finally { cooking = false; }
 }
-function prevTrack() { const p = $("#player"); if (p.currentTime > 4 || pi === 0) { p.currentTime = 0; } else { pi--; playAt(); } }
-function togglePlay() { const p = $("#player"); if (!p.src && pq[pi]) return playAt(); if (p.paused) p.play().catch(() => {}); else p.pause(); }
+function prevTrack() { if (spk) return spkDo("prev"); prevTrackHere(); }
+function prevTrackHere() { const p = $("#player"); if (p.currentTime > 4 || pi === 0) { p.currentTime = 0; } else { pi--; playAt(); } }
+function togglePlay() { if (spk) return spkDo(spkState?.playing ? "pause" : "resume"); togglePlayHere(); }
+function togglePlayHere() { const p = $("#player"); if (!p.src && pq[pi]) return playAt(); if (p.paused) p.play().catch(() => {}); else p.pause(); }
 function toggleShuffle() {
   shuffleOn = !shuffleOn; store.set("umc_shuffle", shuffleOn);
   const head = pq.slice(0, pi + 1), rest = pq.slice(pi + 1);
@@ -1977,7 +2206,9 @@ function renderPlayer() {
   setPanel(`<div class="grab"></div><div id="np" class="np${lyr ? " lyrmode" : ""}${p.paused ? " paused" : ""}">
     <div class="np-top"><button class="icon" onclick="closeSheet()" aria-label="Close">${icon("down")}</button>
       <div class="np-from">${it._cooked ? `Keep cooking · ${esc(typeof it._cooked === "string" ? it._cooked : "same style")}` : nowSrc?.name ? `Playing from ${esc(nowSrc.name)}` : "Now playing"}</div>
-      <button class="icon" onclick="moreSheet()" aria-label="More">${icon("more")}</button></div>
+      <span class="np-topr"><button class="icon${party ? " lit" : ""}" onclick="partySheet()" aria-label="Listen together" title="Listen together">${icon("people")}</button>
+      <button class="icon${spk ? " lit" : ""}" onclick="castSheet()" aria-label="Play on…" title="Play on a speaker or TV">${icon("cast")}</button>
+      <button class="icon" onclick="moreSheet()" aria-label="More">${icon("more")}</button></span></div>
     ${npArt(it)}
     <div class="np-meta"><button class="icon nfm" onclick="notForMe()" aria-label="Not for me" title="Not for me: skip it and never cook or suggest it again">${icon("nope", 22)}</button>
       ${heart(it, "big")}<div class="t">${esc(it.title)}</div>
@@ -2395,9 +2626,12 @@ async function albumQueue() {
 let me = null;
 const initial = n => esc((n || "?").trim()[0] || "?").toUpperCase();
 async function whoami() {
-  const r = await fetch("/api/me");
+  let r; try { r = await fetch("/api/me"); } catch (e) { return offlineStart(); }   // no connection: what's on this phone
+  if (r.status >= 500 && Object.keys(offStore().lists).length) return offlineStart();
   if (r.status === 401) return showLogin();
   me = await r.json();
+  try { localStorage.setItem("umc_me", JSON.stringify(me)); } catch (e) {}
+  getStreamKey(); partyFromLink();
   if (!rc && !$("#q").value.trim()) renderSearchHome();
   const u = me.user || {};
   $("#acct-btn").innerHTML = `<span class="av">${initial(u.name)}</span>`;
@@ -2752,6 +2986,9 @@ async function loadLibrary() {
   let h = `<div class="box libhero"><div class="lib-nums"><div><b>${st.songs.toLocaleString()}</b><span>songs</span></div><div><b>${st.albums.toLocaleString()}</b><span>albums</span></div>
       <div><b>${st.artists.toLocaleString()}</b><span>artists</span></div><div><b>${gbs(st.size)}</b><span>${hrs(st.duration)}</span></div></div>
     ${st.songs ? `<div class="qbar">${bar}</div><div class="chips" style="margin-top:6px">${tierChips({lossless: t.lossless, high: t.high, ok: t.ok, low: t.low})}</div>` : `<div class="muted" style="margin-top:8px">Nothing here yet. Search for a song or an album and get it.</div>`}</div>`;
+  const off = offStore();
+  if (Object.keys(off.lists).length) h += `<button class="wrap-card off-card" onclick="openOffline()"><div class="meta"><div class="t">On this phone</div>
+      <div class="s">${plural(Object.keys(off.songs).length, "song")} saved · plays without the internet</div></div><span class="wrap-ic">${icon("dl", 22)}</span></button>`;
   h += `<button class="wrap-card" onclick="openWrapped('month', 0)"><div class="meta"><div class="t">Your listening</div>
       <div class="s">Your top songs, artists and minutes</div></div><span class="wrap-ic">✦</span></button>`;
   if (r.newest.length) h += `<h2>Recently added</h2><div class="shelf">${r.newest.map(albumCard).join("")}</div>`;
@@ -2851,7 +3088,7 @@ async function openLibAlbum(id) {
       <div class="muted">${a.year || ""}${a.year ? " · " : ""}${plural(a.tracks.length, "song")} · ${gbs(a.size)}</div></div>
       <button class="icon" onclick="closeSheet()">✕</button></div>
     <div class="chips" style="margin:10px 0">${tierChips(q)}</div>
-    <div class="chips"><button class="btn small" onclick="playList(LISTS.libalbum, 0)">▶ Play</button>
+    <div class="chips"><button class="btn small" onclick="playList(LISTS.libalbum, 0)">▶ Play</button>${offBtn("al-" + a.id, a.name, "libalbum", true)}
       ${me?.user?.is_admin && me.house === "separate" && a.folder ? `<button class="btn small ghost" onclick="shareSheet('album', ${esc(JSON.stringify(a.folder))}, ${esc(JSON.stringify(a.name))})">Share${a.shared_with.length ? " (" + a.shared_with.length + ")" : ""}</button>` : ""}
       ${canDelete() ? `<button class="btn small ghost" onclick="libDelete('album','${a.id}',${esc(JSON.stringify(a.name))})">Delete album</button>` : ""}</div>
     <div class="muted" style="margin:8px 4px">${canDelete() ? "Swipe a song left to delete it." : ""}</div>

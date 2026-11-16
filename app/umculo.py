@@ -54,6 +54,8 @@ import importers  # noqa: E402
 import video  # noqa: E402
 import chapters  # noqa: E402
 import radio  # noqa: E402
+import cast  # noqa: E402
+import party  # noqa: E402
 import security  # noqa: E402
 import jellyfin  # noqa: E402
 import cook  # noqa: E402
@@ -61,7 +63,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2300,6 +2302,11 @@ class Handler(BaseHTTPRequestHandler):
                 return False
             users.LOCAL.user = users.USERS.get(t.get("user")) or users.admin_user() or users.OPEN
             return True
+        if "k=" in self.path:                          # a stream key: a speaker or TV, or a song from the DJ's library
+            u = urllib.parse.urlparse(self.path)
+            users.LOCAL.user = cast.user_for_key(urllib.parse.parse_qs(u.query).get("k", [""])[0], u.path)
+            if users.LOCAL.user is not None:
+                return True
         users.LOCAL.user = users.resolve(self)
         return users.LOCAL.user is not None
 
@@ -2333,7 +2340,7 @@ class Handler(BaseHTTPRequestHandler):
             return subsonic.handle(self, "GET")
         if jellyfin.is_jellyfin(self.path):          # Jellyfin music apps (Finamp...)
             return jellyfin.handle(self, "GET")
-        if self.path in ("/manifest.json", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png", "/", "/index.html"):
+        if self.path in ("/manifest.json", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png", "/", "/index.html", "/sw.js"):
             return self.static(self.path)            # the page itself shows the sign-in when needed
         if not self.authed():
             return self.deny()
@@ -2400,6 +2407,8 @@ class Handler(BaseHTTPRequestHandler):
                         sz = qs.get("s", ["300"])[0]
                         return server.cover(self, {"id": [sid], "size": [sz if sz.isdigit() and 8 <= int(sz) <= 1200 else "300"]})
                     p = {"id": [sid], "c": ["Umculo web"], "can": qs.get("can", [""]), "prepare": ["1"]}
+                    if qs.get("speaker"):                     # speakers and TVs: MP3, which every one of them plays
+                        sq = "320"
                     p.update({"format": ["raw"]} if sq == "best" else {"format": ["mp3"], "maxBitRate": [str(sq)]})
                     return server.stream(self, users.current() or users.admin_user() or users.OPEN, p)
                 except server.ApiError as e:
@@ -2432,7 +2441,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"quality": f"MP3 {sq}", "from": f"Your library, converted from {orig}"})
             out = links.handle_get(u.path, qs)
             if out is None:
-                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs) or chapters.handle_get(u.path, qs) or radio.handle_get(u.path, qs)
+                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs) or chapters.handle_get(u.path, qs) or radio.handle_get(u.path, qs) or cast.handle_get(u.path, qs) or party.handle_get(u.path, qs)
             if out is None:
                 out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs)
                        or share.handle_get(u.path, qs) or playlists.handle_get(u.path, qs) or recipes.handle_get(u.path, qs)
@@ -2561,7 +2570,7 @@ class Handler(BaseHTTPRequestHandler):
                 tr_set(job, tr, state="downloading", message="Starting your choice")
                 POOL.submit(manual_pick, job, tr, chk["target"], cand)
                 return self.send_json({"ok": True})
-            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0]) or chapters.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
+            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0]) or chapters.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
             if out is None:
                 out = listening.handle_post(self.path.split("?")[0], b)
             if out is None:
@@ -2716,6 +2725,8 @@ def main():
     video.init(sys.modules[__name__])
     chapters.init(sys.modules[__name__])
     radio.init(sys.modules[__name__])
+    cast.init(sys.modules[__name__])
+    party.init(sys.modules[__name__])
     load_jobs()
     threading.Thread(target=scan_loop, daemon=True).start()
     threading.Thread(target=retry_loop, daemon=True).start()
