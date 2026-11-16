@@ -28,15 +28,17 @@ web(f"/rest/startScan.view?{AUTH}")
 song = None
 for _ in range(60):
     hits = (web(f"/rest/search3.view?{AUTH}&query=Deep%20Session&songCount=5").get("subsonic-response", {}).get("searchResult3") or {}).get("song") or []
-    if hits: song = hits[0]; break
+    song = next((x for x in hits if x.get("title") == "Deep Session 01"), None)
+    if song: break
     time.sleep(0.5)
 check(song, "the mix is in the library")
 sid = song["id"] if song else "x"
 i = web(f"/api/video/{sid}/info")
 check(i.get("mix") and i.get("available") and not i.get("saved"), "a mix has a video to watch")
 c, h, b = raw(f"/api/video/{sid}", headers={"Range": "bytes=0-99"})
-check(c == 206 and h.get("Content-Type") == "video/mp4" and len(b) == 100, "the video streams with seeking")
-check(web(f"/api/video/{sid}/save", "POST").get("ok"), "save the video")
+check(c == 206 and h.get("Content-Type") == "video/mp4" and len(b) == 100, f"the video streams with seeking ({c} {b[:200]!r})")
+sv = web(f"/api/video/{sid}/save", "POST")
+check(sv.get("ok"), f"save the video {sv}")
 side = os.path.join(mixes, ".video", "DJ Test - Deep Session 01.mp4")
 for _ in range(40):
     if web(f"/api/video/{sid}/info").get("saved"): break
@@ -55,10 +57,11 @@ moved_id = None
 for _ in range(60):
     web(f"/rest/startScan.view?{AUTH}")
     hits = (web(f"/rest/search3.view?{AUTH}&query=Deep%20Session&songCount=5").get("subsonic-response", {}).get("searchResult3") or {}).get("song") or []
-    moved_id = next((x["id"] for x in hits if x["id"] != sid), None)
+    moved_id = next((x["id"] for x in hits if x["id"] != sid and x.get("title") == "Deep Session 01"), None)
     if moved_id: break
     time.sleep(1)
-check(moved_id and web(f"/api/video/{moved_id}/info").get("saved"), "after the rescan the moved mix still has its video")
+mi = web(f"/api/video/{moved_id}/info") if moved_id else {}
+check(mi.get("saved"), f"after the rescan the moved mix still has its video {mi} {os.listdir(mixes)}")
 check(web(f"/api/lib/mixes").get("mixes") and all(".video" not in json.dumps(x) for x in web("/api/lib/mixes")["mixes"]), "video files never show up as mixes")
 print(f"V26 OK {n}" if not bad else f"V26 FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)

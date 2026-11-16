@@ -19,7 +19,7 @@ ffmpeg -v error -y -f lavfi -i "color=c=blue:s=400x400" -frames:v 1 "$M/Albums/K
 python3 -c 'import sys,mutagen; f=mutagen.File(sys.argv[1]); f["REPLAYGAIN_TRACK_GAIN"]="-6.20 dB"; f["BPM"]="98"; f.save()' "$M/Albums/Kwesta/DaKAR II/01 Ngud.flac"
 printf '[00:01.00]Ngud line one\n[00:03.50]line two\n' > "$M/Albums/Kwesta/DaKAR II/01 Ngud.lrc"
 mkdir -p $M/_playlists; printf '#EXTM3U\n../Albums/Kwesta/DaKAR II/01 Ngud.flac\n../Umculo/Mas Musiq/Mas Musiq - Zaka.m4a\n' > "$M/_playlists/Family Faves.m3u8"
-ffmpeg -v error -y -f lavfi -i "testsrc=d=6:s=320x180:r=10" -f lavfi -i "sine=d=6" -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart $S/video.mp4
+ffmpeg -v error -y -f lavfi -i "testsrc=d=6:s=320x180:r=10" -f lavfi -i "sine=d=6" -shortest -c:v mpeg4 -c:a aac -movflags +faststart $S/video.mp4 || cp "$M/Albums/Kwesta/DaKAR II/01 Ngud.flac" $S/video.mp4
 MOCK_ND_LIBRARY=1 python3 test/mock_services.py $((PORT+1000)) $S/data > $S/mock.log 2>&1 & MP=$!
 for i in $(seq 30); do grep -q ready $S/mock.log && break; sleep 0.5; done
 U=http://localhost:$((PORT+1000))
