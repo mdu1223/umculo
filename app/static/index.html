@@ -562,7 +562,7 @@ const norm = x => (x || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const mmss = s => s ? `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}` : "";
 const mb = b => b ? (b >= 1e9 ? (b/1e9).toFixed(1)+" GB" : (b/1e6).toFixed(b >= 1e8 ? 0 : 1)+" MB") : "";
-const SRC = {soulseek:"Soulseek", usenet:"Usenet", soundcloud:"SoundCloud", youtube:"YouTube", link:"Link"};
+const SRC = {soulseek:"Soulseek", usenet:"Usenet", hearthis:"Hearthis.at", soundcloud:"SoundCloud", youtube:"YouTube", link:"Link"};
 let lastQuery = "", lastCatalog = [], lastLibrary = [], check = null, checkTimer = null, playing = null;
 
 async function api(path, opts={}) {
@@ -3495,7 +3495,7 @@ const PROFILES = [["best","Best quality","Keep the best copy exactly as it comes
   ["320","MP3 320","Anything better is converted to MP3 320. Sounds the same to almost everyone, about a third of FLAC's size."],
   ["256","MP3 256","Smaller still. Better copies are converted to 256."],
   ["128","MP3 128","Smallest files, for small drives or data limits."]];
-const SRCS = ["soulseek","usenet","soundcloud","youtube"];
+const SRCS = ["soulseek","usenet","hearthis","soundcloud","youtube"];
 let settings = null;
 async function openSettings() {
   openSheet(`<div class="grab"></div><div class="empty"><span class="spin"></span></div>`);

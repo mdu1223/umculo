@@ -248,6 +248,22 @@ class H(BaseHTTPRequestHandler):
         if p == "/preview.mp3":
             with open(os.path.join(ROOT, "preview.mp3"), "rb") as fh:
                 return self.raw(fh.read(), "audio/mpeg")
+        # ---- Hearthis.at: free downloads offered by the uploader (and one that isn't)
+        if p == "/hearthis/search/":
+            t = q.get("t", [""])[0].lower()
+            if "lebtoniq" not in t:
+                return self.j([])
+            return self.j([
+                {"title": "LebtoniQ - Banomona (Original Mix)", "duration": "30", "downloadable": "1", "fan_exclusive_download": "0",
+                 "download_url": f"http://localhost:{PORT}/hearthis/dl/banomona", "download_filename": "Banomona (hearthis.at).mp3",
+                 "permalink_url": "https://hearthis.at/lebtoniq/banomona/", "user": {"username": "LebtoniQ"}},
+                {"title": "LebtoniQ - Banomona (Extended)", "duration": "30", "downloadable": "0", "download_url": "",
+                 "user": {"username": "LebtoniQ"}},
+                {"title": "LebtoniQ - Banomona (Fan edit)", "duration": "30", "downloadable": "1", "fan_exclusive_download": "1",
+                 "download_url": f"http://localhost:{PORT}/hearthis/dl/fan", "user": {"username": "Someone"}}])
+        if p.startswith("/hearthis/dl/"):
+            with open(os.path.join(ROOT, "preview.mp3"), "rb") as fh:
+                return self.raw(fh.read(), "audio/mpeg")
         # ---- podcasts (RSS, iTunes lookup, PodOmatic) and episode audio
         if p in ("/feed.xml", "/podomatic/deepshizzol.xml"):
             return self.raw(FEED.encode(), "application/rss+xml")

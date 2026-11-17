@@ -55,5 +55,29 @@ check(found, "and it's in the library")
 # songs from your mixes
 w = web("/api/chapters/wanted"); check("songs" in w, "the wanted list answers")
 r = web("/api/chapters/wanted/get", "POST", {}); check(r.get("_code") == 400 or r.get("job"), "get them all: a job, or a clear 'nothing to get'")
+# Hearthis.at: a new free source (only uploads the uploader offers as free downloads)
+st = web("/api/settings")
+check("hearthis" in (st.get("sources") or []), f"Hearthis.at is switched on for an existing install {st.get('sources')}")
+c = web("/api/check", "POST", {"track": {"artist": "LebtoniQ", "title": "Banomona", "duration": 30}})
+cid = c.get("id"); cands = []
+for _ in range(40):
+    v = web(f"/api/check/{cid}")
+    cands = [x for x in v.get("candidates", []) if x["source"] == "hearthis"]
+    d = v.get("done"); 
+    if (d.get("hearthis") if isinstance(d, dict) else d) and cands: break
+    time.sleep(0.5)
+names = [x["name"] for x in cands]
+check(names == ["LebtoniQ - Banomona (Original Mix)"], f"only the free download is offered (not fan-only, not stream-only) {names}")
+check(cands and cands[0]["quality"] == "MP3 original" and cands[0]["detail"] == "LebtoniQ", f"with its quality and uploader {cands[:1]}")
+if cands:
+    r = web("/api/get", "POST", {"check_id": cid, "candidate_id": cands[0]["id"]})
+    rid = r.get("id"); state = {}
+    for _ in range(60):
+        reqs = web("/api/requests").get("requests", [])
+        state = next((x for x in reqs if x["id"] == rid), {})
+        if state.get("state") in ("ready", "failed", "done"): break
+        time.sleep(0.5)
+    check(state.get("state") in ("ready", "done"), f"downloaded from Hearthis.at {state.get('state')} {state.get('message')}")
+    check(any("Banomona" in f and not f.endswith(".txt") for d, _x, fs in os.walk(os.path.join(M, "Umculo")) for f in fs if "LebtoniQ" in d), "and filed in the library")
 print(f"V30 OK {n}" if not bad else f"V30 FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)

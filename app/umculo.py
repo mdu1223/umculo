@@ -67,7 +67,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "2.9.5"
+VERSION = "2.9.6"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -92,7 +92,7 @@ CONFIG = {
     "tidy_mixes": E("TIDY_MIXES", "1") == "1",           # one folder per show, the show as the album, duplicates set aside
     "search_seconds": int(E("SEARCH_SECONDS", "20")),
     "deezer": E("DEEZER_API", "https://api.deezer.com").rstrip("/"),
-    "sources": [s.strip() for s in E("SOURCES", "soulseek,usenet,soundcloud,youtube").split(",") if s.strip()],
+    "sources": [s.strip() for s in E("SOURCES", "soulseek,usenet,hearthis,soundcloud,youtube").split(",") if s.strip()],
     "ntfy": E("NTFY_URL", ""),
     "music": E("MUSIC_DIR", "/data/Music"),
     "family": E("FAMILY_DIR", "/data/Family"),              # separate households: one folder per person
@@ -663,13 +663,72 @@ def ytdlp_candidates(t, emit, source):
         })
 
 
+# ---- Hearthis.at: DJs and producers (lots of South African house) who let you download their uploads for free
+HEARTHIS_API = E("HEARTHIS_API", "https://api-v2.hearthis.at")
+
+
+def hearthis_candidates(t, emit):
+    q = " ".join(filter(None, [t["artist"], t["title"]]))
+    emit("status", "searching")
+    url = f"{HEARTHIS_API}/search/?{urllib.parse.urlencode({'t': q, 'type': 'tracks', 'count': 20})}"
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "Umculo/" + VERSION}),
+                                timeout=20) as r:
+        res = json.loads(r.read() or b"[]")
+    for e in res if isinstance(res, list) else []:
+        # only what the uploader offers as a free download (not fan-only downloads)
+        if str(e.get("downloadable")) != "1" or str(e.get("fan_exclusive_download") or "0") == "1" or not e.get("download_url"):
+            continue
+        user = (e.get("user") or {}).get("username") or ""
+        song_ok, exact = match(f"{e.get('title', '')} {user}", t)
+        if not song_ok:
+            continue
+        dur = int(e.get("duration") or 0)
+        ext = (e.get("download_filename") or "x.mp3").rsplit(".", 1)[-1].lower()
+        if ext in LOSSLESS:
+            score, label, tier = quality(ext)
+            label = f"{ext.upper()} original"
+        else:
+            score, label, tier = 380, f"{ext.upper()} original", "high"   # the uploader's own file (usually MP3 320)
+        emit("candidate", {
+            "source": "hearthis", "exact": exact, "score": score, "quality": label, "tier": tier, "size": 0,
+            "eta": fmt_eta(20 + dur / 40), "eta_s": int(20 + dur / 40), "detail": user,
+            "name": e.get("title") or "", "duration": dur,
+            "ref": {"url": e["download_url"], "page": e.get("permalink_url") or "", "ext": ext},
+        })
+
+
+def dl_hearthis(req):
+    ref = req["candidate"]["ref"]
+    out = os.path.join(CONFIG["staging"], req["id"])
+    os.makedirs(out, exist_ok=True)
+    dest = os.path.join(out, safe(req["candidate"].get("name") or "track") + "." + re.sub(r"[^a-z0-9]", "", ref.get("ext") or "mp3"))
+    rq = urllib.request.Request(ref["url"], headers={"User-Agent": "Umculo/" + VERSION})
+    with urllib.request.urlopen(rq, timeout=60) as r, open(dest, "wb") as fh:
+        tot = int(r.headers.get("Content-Length") or 0)
+        got = 0
+        while True:
+            chunk = r.read(256 * 1024)
+            if not chunk:
+                break
+            fh.write(chunk)
+            got += len(chunk)
+            if tot:
+                update(req, progress=int(got * 100 / tot), message=f"Downloading ({int(got * 100 / tot)}%)")
+            if req.get("stop") and req["stop"].is_set():
+                raise RuntimeError("cancelled")
+    if os.path.getsize(dest) < 50_000:
+        raise RuntimeError("Hearthis sent something that isn't a song")
+    return dest
+
+
 SOURCE_NAMES = {"soulseek": "Soulseek", "usenet": "Usenet", "soundcloud": "SoundCloud", "youtube": "YouTube",
-                "link": "the link"}
+                "hearthis": "Hearthis.at", "link": "the link"}
 SOURCES = {
     "soulseek": soulseek_candidates,
     "usenet": usenet_candidates,
     "soundcloud": lambda t, emit: ytdlp_candidates(t, emit, "soundcloud"),
     "youtube": lambda t, emit: ytdlp_candidates(t, emit, "youtube"),
+    "hearthis": hearthis_candidates,
 }
 
 
@@ -1806,7 +1865,7 @@ def write_job_playlist(job):
 
 
 DL = {"soulseek": lambda r: dl_soulseek(r), "usenet": lambda r: dl_usenet(r),
-      "soundcloud": lambda r: dl_ytdlp(r), "youtube": lambda r: dl_ytdlp(r),
+      "soundcloud": lambda r: dl_ytdlp(r), "youtube": lambda r: dl_ytdlp(r), "hearthis": lambda r: dl_hearthis(r),
       "link": lambda r: links.dl_link(r)}
 
 
@@ -2168,8 +2227,8 @@ def load_jobs():
 SETTINGS = {   # key: (type, choices or None, description)
     "quality": (str, list(PROFILES), "Quality profile"),
     "best_effort": (bool, None, "Take the best copy there is when your quality isn't available"),
-    "sources": (list, ["soulseek", "usenet", "soundcloud", "youtube"], "Sources for searches"),
-    "batch_sources": (list, ["soulseek", "usenet", "soundcloud", "youtube"], "Sources for playlists"),
+    "sources": (list, ["soulseek", "usenet", "hearthis", "soundcloud", "youtube"], "Sources for searches"),
+    "batch_sources": (list, ["soulseek", "usenet", "hearthis", "soundcloud", "youtube"], "Sources for playlists"),
     "slsk_stall_s": (int, None, "Drop a Soulseek peer that doesn't move after (seconds)"),
     "stream_after_s": (int, None, "Streaming sites join a playlist download after (seconds)"),
     "retry_days": (int, None, "Retry songs that weren't found after (days)"),
@@ -2227,11 +2286,26 @@ def apply_settings(new, save=True):
     return changed
 
 
+NEW_SOURCES = ["hearthis"]          # sources added in an update: switched on once for existing installs
+
+
 def load_settings():
     try:
         apply_settings(_load_json("settings.json", {}), save=False)
     except Exception as e:  # noqa: BLE001
         log("settings file ignored:", e)
+    seen = _load_json("sources_seen.json", [])
+    fresh = [s for s in NEW_SOURCES if s not in seen]
+    if fresh:
+        for key in ("sources", "batch_sources"):
+            lst = list(CONFIG.get(key) or [])
+            for s in fresh:
+                if s not in lst:
+                    lst.insert(lst.index("soundcloud") if "soundcloud" in lst else len(lst), s)
+            CONFIG[key] = lst
+        apply_settings({k: CONFIG[k] for k in ("sources", "batch_sources")})
+        _save_json("sources_seen.json", seen + fresh)
+        log("new source switched on:", ", ".join(SOURCE_NAMES.get(s, s) for s in fresh))
 
 
 # --------------------------------------------------------------------------- web server

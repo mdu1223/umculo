@@ -69,7 +69,8 @@ Umculo plays and organises your own music with no extra setup. To bring in music
 |---|---|
 | Soulseek | a running [slskd](https://github.com/slskd/slskd): `SLSKD_URL`, `SLSKD_KEY`, `SLSKD_DOWNLOADS` |
 | Usenet | Prowlarr + SABnzbd: `PROWLARR_URL`, `PROWLARR_KEY`, `SABNZBD_URL`, `SABNZBD_KEY` |
-| YouTube / SoundCloud | nothing; built in through yt-dlp |
+| Hearthis.at | nothing; built in. Only songs the uploader offers as a free download (many South African house producers and DJs) |
+| YouTube / SoundCloud | nothing; built in through yt-dlp (SoundCloud gives the uploader's original file when they allow downloads) |
 
 ## Settings
 
@@ -89,7 +90,7 @@ Most settings live in the app (**Settings**). These are set in `docker-compose.y
 | `QUALITY_PROFILE` | `best` | `best`, `320`, `256` or `128` |
 | `STREAM_QUALITY` | `320` | Quality when streaming songs you don't have yet |
 | `INTERNET_KBPS` | `320` | Highest bitrate sent to devices outside your home (`0` = no limit) |
-| `SOURCES` | `soulseek,usenet,soundcloud,youtube` | Where to look when you search |
+| `SOURCES` | `soulseek,usenet,hearthis,soundcloud,youtube` | Where to look when you search |
 | `BATCH_SOURCES` | same | Where to look for playlists and upgrades |
 | `NTFY_URL` | | Phone notifications |
 | `LISTENBRAINZ_USER` | | Better recommendations from your ListenBrainz history |

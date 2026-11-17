@@ -162,6 +162,7 @@ except urllib.error.HTTPError as e:
 x = web("/api/connectors/save", {"id": "youtube", "values": {}, "on": True}); check(x["on"] is True, "youtube on")
 s_ = web("/api/settings"); check("youtube" in s_["sources"] and "youtube" in s_["batch_sources"], "sources updated")
 x = web("/api/connectors/save", {"id": "youtube", "values": {}, "on": False}); check(x["on"] is False, "youtube off")
+x = web("/api/connectors/save", {"id": "hearthis", "values": {}, "on": False}); check(x["on"] is False, "hearthis off")
 try:
     web("/api/connectors/save", {"id": "soulseek", "values": {}, "on": False}); check(False, "last source turned off")
 except urllib.error.HTTPError as e:

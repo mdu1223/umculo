@@ -24,7 +24,7 @@ SHZ=""; if [ -n "$TEST_SHAZAM" ]; then echo '[[0, 10000, "Kwesta", "Ngud"]]' > $
 MOCK_ND_LIBRARY=1 python3 test/mock_services.py $((PORT+1000)) $S/data > $S/mock.log 2>&1 & MP=$!
 for i in $(seq 30); do grep -q ready $S/mock.log && break; sleep 0.5; done
 U=http://localhost:$((PORT+1000))
-env PORT=$PORT MUSIC_SERVER=builtin NAVIDROME_URL=$U NAVIDROME_USER=mdu NAVIDROME_PASSWORD=ndpass SLSKD_URL=$U PROWLARR_URL=$U PROWLARR_KEY=k SABNZBD_URL=$U SABNZBD_KEY=k DEEZER_API=$U \
+env PORT=$PORT MUSIC_SERVER=builtin NAVIDROME_URL=$U NAVIDROME_USER=mdu NAVIDROME_PASSWORD=ndpass SLSKD_URL=$U PROWLARR_URL=$U PROWLARR_KEY=k SABNZBD_URL=$U SABNZBD_KEY=k DEEZER_API=$U HEARTHIS_API=$U/hearthis \
  MUSIC_DIR=$M FAMILY_DIR=$S/data/Family SPOTIFY_DIR="$M/Spotify Playlists" PLAYLISTS_DIR=$M/_playlists SLSKD_DOWNLOADS=$M/Soulseek LIBRARY_DIR=$M/Umculo \
  MIXES_DIR=$M/meta_podcasts STAGING_DIR=$S/data/downloads/umculo CONFIG_DIR=$S/config SOURCES=soulseek BATCH_SOURCES=soulseek SEARCH_SECONDS=1 COOK_MIN_SECONDS=1 \
  LRCLIB_API=$U NTFY_URL=$U/ntfy SHARE_SCAN_WAIT=1 ITUNES_API=$U PODOMATIC_FEED="$U/podomatic/{channel}.xml" UMCULO_TEST_VIDEO=$S/video.mp4 UMCULO_TEST_SHAZAM=$SHZ INBOX_EVERY=${INBOX_EVERY:-30} GIGS_API=${GIGS_API:-https://rest.bandsintown.com} python3 -I app/umculo.py > $S/app.log 2>&1 & AP=$!
