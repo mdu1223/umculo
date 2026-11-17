@@ -30,7 +30,7 @@
 - **Messages on WhatsApp or ntfy.** New mixes from shows you follow, a Sunday note about your week, downloads ready: each person chooses (WhatsApp through [WAHA](https://waha.devlike.pro)).
 - **Gigs near you.** Upcoming shows by artists you follow or play a lot, near your city or within a distance, in For You and as a message (from Bandsintown).
 - **Alarms and automations.** Wake up to a playlist, smart mix, show or radio on a Home Assistant speaker, getting louder. A hook address lets Home Assistant automations start music ("when I get home").
-- **Songs from your mixes.** Every song in your mixes' tracklists that you don't have, in one list: get them all from your sources into a playlist, or buy the rest (Traxsource, Beatport, Bandcamp, Juno links).
+- **Songs from your mixes.** Every song in your mixes' tracklists that you don't have, in one list: get them all from your sources into a playlist (optional buy links: Settings → Where to look).
 - **The inbox.** Drop music you bought (files or zips) into `Music/_inbox` and Umculo files it with tags and covers. Works well with [bandcampsync](https://github.com/meeb/bandcampsync) pointed at the inbox.
 - **Watch the mix.** Turn on *Video* while a DJ mix plays and the set's video plays along, in step with the audio. Tick *Also save the video* when you download a mix or subscribe to a show to keep the video too (up to 720p, next to the mix in a hidden `.video` folder).
 - **Tidy-up tools.** One folder per artist, duplicates removed, cover art and lyrics added.

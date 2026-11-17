@@ -2512,14 +2512,14 @@ async function findChapters() {
 const STORES = [["Traxsource", q => `https://www.traxsource.com/search?term=${q}`], ["Beatport", q => `https://www.beatport.com/search?q=${q}`],
   ["Bandcamp", q => `https://bandcamp.com/search?q=${q}&item_type=t`], ["Juno", q => `https://www.junodownload.com/search/?q%5Ball%5D%5B%5D=${q}`]];
 function buyRow(q) {
-  if (!(q || "").trim()) return "";
+  if (!(q || "").trim() || !store.get("umc_buy", false)) return "";            // off unless switched on in Settings
   const e = encodeURIComponent(q.trim());
   return `<div class="buy"><span class="muted">Buy it (then drop it in your inbox folder):</span>${STORES.map(([n, u]) => `<a href="${u(e)}" target="_blank" rel="noopener">${n}</a>`).join("")}</div>`;
 }
 function songMenu(artist, title) {
   const q = `${artist} - ${title}`;
   openSheet(`<div class="grab"></div><div class="rowline"><div class="meta"><b>${esc(title)}</b><div class="muted">${esc(artist)}</div></div></div>
-    <div class="menu"><button onclick="searchFor(${esc(JSON.stringify(q))})">Search for it (your library, the internet, every source)</button></div>${buyRow(q)}`);
+    <div class="menu"><button onclick="searchFor(${esc(JSON.stringify(q))})">Search for it (your library, the internet, every source)</button></div>${buyRow(q)}`);   // buy links only when switched on
 }
 async function getMixSongs(find, btn) {
   await busy(btn, async () => { const r = await api("/api/chapters/wanted/get", {method: "POST", body: JSON.stringify({find, name: (pq[pi]?.title || "Mix songs").slice(0, 80)})});
@@ -2532,7 +2532,7 @@ async function openWanted() {
   setPanel(`<div class="grab"></div><div class="rowline"><div class="meta"><div class="t" style="font-size:20px;font-weight:800">Songs from your mixes</div>
       <div class="muted">${plural(r.songs.length, "song")} in your mixes' tracklists that you don't have yet</div></div><button class="icon" onclick="closeSheet()" aria-label="Close">✕</button></div>
     ${r.songs.length ? `<button class="btn" style="width:100%" onclick="getWantedAll(this)">Get them all from your sources</button>
-      <div class="muted" style="margin:6px 4px 12px">They go into one playlist, “Songs from my mixes”. Songs no source has stay listed there: buy those and drop them in your inbox.</div>` : ""}
+      <div class="muted" style="margin:6px 4px 12px">They go into one playlist, “Songs from my mixes”. Songs no source has stay listed there${store.get("umc_buy", false) ? ": buy those and drop them in your inbox" : ""}.</div>` : ""}
     ${ib ? `<div class="box"><b>Your inbox folder</b><div class="muted">Drop songs or zips you bought (Traxsource, Beatport, Bandcamp, Juno) into <code>${esc(ib.folder)}</code> and Umculo files them with tags and covers.${ib.waiting ? ` ${plural(ib.waiting, "file")} waiting.` : ""}${ib.filed.length ? `<br>Last filed: ${ib.filed.slice(0, 3).map(x => esc(x.artist + " - " + x.title)).join(", ")}` : ""}${ib.problems.length ? `<br>Couldn't file: ${ib.problems.slice(0, 3).map(x => esc(x.file + " (" + x.why + ")")).join(", ")}` : ""}</div></div>` : ""}
     <div class="box">${r.songs.map(x => `<div class="rowline trk"><div class="meta"><b>${esc(x.title)}</b><div class="muted">${esc(x.artist)} · in ${esc(x.mixes.slice(0, 2).join(", "))}${x.mixes.length > 2 ? ` +${x.mixes.length - 2}` : ""}</div></div>
       <button class="icon" onclick="songMenu(${esc(JSON.stringify(x.artist))}, ${esc(JSON.stringify(x.title))})" aria-label="Find or buy">${icon("more", 18)}</button></div>`).join("") || `<div class="muted">You have every song from your mixes' tracklists. Use “Find the songs” on more mixes.</div>`}</div>`);
@@ -3525,7 +3525,9 @@ function renderSettings() {
     <h2>Where to look</h2>
     <div class="box"><div class="muted">When you search</div>${src("sources")}
       <div class="muted" style="margin-top:8px">For playlists, imports and upgrades</div>${src("batch_sources")}
-      <div class="muted" style="margin-top:10px;font-size:12px">Only download music you own or have the right to. You're responsible for what you download and how you use these sources.</div></div>
+      <div class="muted" style="margin-top:10px;font-size:12px">Only download music you own or have the right to. You're responsible for what you download and how you use these sources.</div>
+      <label class="opt" style="margin-top:10px"><input type="checkbox" ${store.get("umc_buy", false) ? "checked" : ""} onchange="store.set('umc_buy', this.checked); toast(this.checked ? 'Buy links on' : 'Buy links off')">
+        <span><b>Show where to buy songs</b><br><span class="muted">Traxsource, Beatport, Bandcamp and Juno links in search and on songs from your mixes (this device)</span></span></label></div>
     <h2>Waiting</h2>
     <div class="box">
       ${num("slsk_stall_s", "Give up on a stuck Soulseek peer after", "min", 60)}
