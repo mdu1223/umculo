@@ -63,5 +63,21 @@ for _ in range(60):
 mi = web(f"/api/video/{moved_id}/info") if moved_id else {}
 check(mi.get("saved"), f"after the rescan the moved mix still has its video {mi} {os.listdir(mixes)}")
 check(web(f"/api/lib/mixes").get("mixes") and all(".video" not in json.dumps(x) for x in web("/api/lib/mixes")["mixes"]), "video files never show up as mixes")
+# save every mix's video at once
+mix2 = os.path.join(mixes, "DJ Test", "Deep Session 03.mp3")
+subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=d=6", "-c:a", "libmp3lame", mix2], check=True)
+web(f"/rest/startScan.view?{AUTH}")
+for _ in range(60):
+    hits = (web(f"/rest/search3.view?{AUTH}&query=Deep%20Session&songCount=9").get("subsonic-response", {}).get("searchResult3") or {}).get("song") or []
+    if any(x.get("title") in ("Deep Session 03", "Deep Session 03.mp3") or "03" in (x.get("title") or "") for x in hits): break
+    time.sleep(0.5)
+r = web("/api/video/all", "POST")
+check(r.get("added") == 1, f"save all: only the mix without a video is queued {r}")
+for _ in range(40):
+    st = web("/api/video/all")
+    if not st.get("running"): break
+    time.sleep(0.5)
+check(st.get("done") == 1 and os.path.exists(os.path.join(mixes, "DJ Test", ".video", "Deep Session 03.mp4")), f"and its video is saved {st}")
+check(web("/api/video/all", "POST").get("added") == 0, "running it again finds nothing left to do")
 print(f"V26 OK {n}" if not bad else f"V26 FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)

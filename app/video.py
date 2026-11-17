@@ -9,6 +9,8 @@ GET  /api/video/<song id>/info   -> {"mix", "available", "saved", "saving", "pag
 GET  /api/video/<song id>        -> the video (saved copy, or streamed through Umculo)
 POST /api/video/<song id>/save   -> keep a copy of the video (in the background)
 POST /api/video/<song id>/remove -> delete the saved copy
+GET  /api/video/all              -> how saving every mix's video is going
+POST /api/video/all              -> save the video of every mix of yours that hasn't got one (one at a time, in the background)
 
 Links and subscriptions with "video": true save the video along with the audio.
 """
@@ -245,6 +247,64 @@ def run_save(path, page):
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+ALL = {"queue": [], "done": 0, "failed": 0, "none": 0, "current": "", "running": False, "errors": []}
+
+
+def mix_rows(u):
+    srv = core.server
+    root = core.CONFIG["mixes"].rstrip("/") + "/"
+    return srv.db.q(f"""SELECT * FROM song WHERE substr(path, 1, ?) = ? AND {srv.lib_sql(u)}
+                        ORDER BY created DESC""", (len(root), root))
+
+
+def all_view():
+    return {"queued": len(ALL["queue"]), "done": ALL["done"], "failed": ALL["failed"], "no_video": ALL["none"],
+            "current": ALL["current"], "running": ALL["running"], "errors": ALL["errors"][-5:]}
+
+
+def save_all():
+    if not core.users.can("download"):
+        raise PermissionError("Saving videos needs download permission")
+    rows = [r for r in mix_rows(core.users.current()) if not os.path.exists(sidecar(r["path"]))]
+    with LOCK:
+        have = {x["path"] for x in ALL["queue"]} | {ALL["current"]}
+        new = [{"path": r["path"], "title": r["title"], "duration": r["duration"], "artist": r["artist"]} for r in rows if r["path"] not in have]
+        ALL["queue"] += new
+        if not ALL["running"]:
+            ALL.update(done=0, failed=0, none=0, errors=[], running=True)
+            threading.Thread(target=run_all, daemon=True).start()
+    return {**all_view(), "added": len(new)}
+
+
+def run_all():
+    """One video at a time, so the server and the internet line stay usable."""
+    try:
+        while True:
+            with LOCK:
+                if not ALL["queue"]:
+                    break
+                job = ALL["queue"].pop(0)
+                ALL["current"] = job["title"]
+            if os.path.exists(sidecar(job["path"])) or not os.path.exists(job["path"]):
+                continue
+            page = page_for(job)
+            if not page:
+                ALL["none"] += 1
+                continue
+            SAVING[job["path"]] = {"state": "saving", "message": "Saving the video", "progress": 0}
+            run_save(job["path"], page)
+            if (SAVING.get(job["path"]) or {}).get("state") == "saved":
+                ALL["done"] += 1
+            else:
+                ALL["failed"] += 1
+                ALL["errors"].append(f"{job['title'][:60]}: {(SAVING.get(job['path']) or {}).get('message', '')[:120]}")
+            time.sleep(5)
+    finally:
+        ALL["running"], ALL["current"] = False, ""
+        if ALL["done"] or ALL["failed"]:
+            core.log(f"mix videos: {ALL['done']} saved, {ALL['failed']} failed, {ALL['none']} without a video found")
+
+
 def save(sid):
     if not core.users.can("download"):
         raise PermissionError("Saving videos needs download permission")
@@ -272,6 +332,8 @@ def remove(sid):
 # --------------------------------------------------------------------------- web
 def handle_get(h, path):
     """Called from do_GET with the handler, since the video is streamed, not JSON. -> True when handled."""
+    if path == "/api/video/all":
+        return h.send_json(all_view()) or True
     m = re.match(r"^/api/video/([\w-]{1,40})(/info)?$", path)
     if not m:
         return None
@@ -282,6 +344,8 @@ def handle_get(h, path):
 
 
 def handle_post(path):
+    if path == "/api/video/all":
+        return save_all()
     m = re.match(r"^/api/video/([\w-]{1,40})/(save|remove)$", path)
     if not m:
         return None

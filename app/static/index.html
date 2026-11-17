@@ -3187,7 +3187,28 @@ async function renderLibPane() {
   head.innerHTML = `Mixes <span class="count">${libMixes.length}</span>`;
   pane.innerHTML = (libMixes.length ? `<div class="agrid albums">${libMixes.map(m => albumCard({...m, artist: `${plural(m.songs, "episode")} · ${ago(m.latest)}`, year: 0})).join("")}</div>`
       : `<div class="empty">No DJ mixes or episodes yet. Paste a SoundCloud, Mixcloud or podcast link to get one.</div>`) +
-    `<button class="btn ghost" style="width:100%;margin-top:12px" onclick="show('mixes')">Paste a link or manage subscriptions</button>`;
+    `<div id="vid-all"></div><button class="btn ghost" style="width:100%;margin-top:12px" onclick="show('mixes')">Paste a link or manage subscriptions</button>`;
+  if (libMixes.length) vidAllShow();
+}
+/* every mix's video, saved next to it (one at a time on the server) */
+let vidAllT = null;
+async function vidAllShow(started) {
+  clearTimeout(vidAllT); const el = $("#vid-all"); if (!el) return;
+  let r; try { r = await api("/api/video/all"); } catch (e) { return; }
+  if (r.running) {
+    el.innerHTML = `<div class="box" style="margin-top:12px"><div class="t"><span class="spin"></span>Saving mix videos</div>
+      <div class="muted">${r.current ? `Now: ${esc(r.current)}<br>` : ""}${r.done} saved · ${r.queued} to go${r.failed ? ` · ${r.failed} failed` : ""}${r.no_video ? ` · ${r.no_video} without a video` : ""}</div></div>`;
+    vidAllT = setTimeout(vidAllShow, 8000);
+  } else {
+    el.innerHTML = `<button class="btn ghost" style="width:100%;margin-top:12px" onclick="vidAllStart(this)">${icon("video", 18)} Save the video of every mix</button>
+      ${r.done || r.failed || r.no_video ? `<div class="muted" style="margin:6px 4px 0">Last run: ${r.done} saved${r.failed ? `, ${r.failed} failed` : ""}${r.no_video ? `, ${r.no_video} had no video` : ""}.${r.errors.length ? "<br>" + r.errors.map(esc).join("<br>") : ""}</div>` : ""}`;
+  }
+}
+async function vidAllStart(btn) {
+  if (!confirm("Save the video (up to 720p, about 1 GB an hour) of every mix that doesn't have one? It runs on your server, one at a time.")) return;
+  await busy(btn, async () => { const r = await api("/api/video/all", {method: "POST", body: "{}"});
+    toast(r.added ? `Saving ${plural(r.added, "video")}, one at a time` : "Every mix already has its video"); });
+  vidAllShow();
 }
 function renderArtistGrid() {
   const f = norm(libFilter), list = libArtists.filter(a => !f || norm(a.name).includes(f));
