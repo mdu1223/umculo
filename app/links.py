@@ -512,13 +512,17 @@ def sub_loop():
 # --------------------------------------------------------------------------- song finder
 DASH = re.compile(r"\s+[-–—]\s+")
 STAMP = re.compile(r"^\s*[\[(]?((?:\d{1,2}:)?\d{1,2}:\d{2})[\])]?\s*[-–—.:)|]?\s*")
-NUM = re.compile(r"^\s*\d{1,3}\s*[.)\-:]\s*|^\s*\d{1,3}\s+(?=\S)")
+NUM = re.compile(r"^\s*#?\d{1,3}\s*(?:\.+|\)|:)\s*|^\s*#?\d{1,3}\s+[-–—]\s+(?=.+\s[-–—]\s)|^\s*#?0\d\s+(?=\S)")
+# "4.", "4..", "4)", "4:", "#4 - Artist - Title", "04 Artist" (not "3 Doors Down", "50 Cent", "112 - Cupid")
 JUNK = re.compile(r"https?://|www\.|@|\bfollow|\bsubscribe|instagram|facebook|twitter|tiktok|\bbookings?\b|"
                   r"\bcontact\b|e-?mail", re.I)
 
 
 def split_song(text):
     text = re.sub(r"\s+", " ", text).strip(" -–—*•·")
+    bare = NUM.sub("", text, count=1).strip(" -–—*•·.")
+    if DASH.search(bare):                          # a track number in front ("4..Artist - Title"): drop it
+        text = bare
     parts = DASH.split(text, maxsplit=1)
     if len(parts) == 2 and parts[0] and parts[1]:
         return parts[0].strip(), parts[1].strip()
@@ -838,6 +842,13 @@ def owned(artist, title):
     return ""
 
 
+def clean_artist(a):
+    """'4..LebtoniQ' (found before 2.9.5) -> 'LebtoniQ'."""
+    a = a or ""
+    c = NUM.sub("", a, count=1).strip(" -.") if NUM.match(a) else a
+    return c or a
+
+
 def get_found(fid, indexes, name=""):
     f = FINDS.get(fid)
     if not f:
@@ -845,7 +856,7 @@ def get_found(fid, indexes, name=""):
     want = [t for t in f["tracks"] if t["i"] in set(indexes)]
     if not want:
         raise ValueError("Choose at least one song")
-    tracks = [{"artist": t["artist"], "title": t["title"], "duration": 0} for t in want]
+    tracks = [{"artist": clean_artist(t["artist"]), "title": t["title"], "duration": 0} for t in want]
     name = core.safe(name or f["title"])
     return core.new_job(name, "import", os.path.join(core.CONFIG["playlists"], name + ".m3u8"), tracks)
 

@@ -59,6 +59,7 @@ import party  # noqa: E402
 import notify as notify_people  # noqa: E402
 import gigs  # noqa: E402
 import alarms  # noqa: E402
+import inbox  # noqa: E402
 import security  # noqa: E402
 import jellyfin  # noqa: E402
 import cook  # noqa: E402
@@ -66,7 +67,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "2.9.4"
+VERSION = "2.9.5"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2449,7 +2450,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"quality": f"MP3 {sq}", "from": f"Your library, converted from {orig}"})
             out = links.handle_get(u.path, qs)
             if out is None:
-                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs) or chapters.handle_get(u.path, qs) or radio.handle_get(u.path, qs) or cast.handle_get(u.path, qs) or party.handle_get(u.path, qs) or notify_people.handle_get(u.path, qs) or gigs.handle_get(u.path, qs) or alarms.handle_get(u.path, qs)
+                out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs) or chapters.handle_get(u.path, qs) or radio.handle_get(u.path, qs) or cast.handle_get(u.path, qs) or party.handle_get(u.path, qs) or notify_people.handle_get(u.path, qs) or gigs.handle_get(u.path, qs) or alarms.handle_get(u.path, qs) or inbox.handle_get(u.path, qs)
             if out is None:
                 out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs)
                        or share.handle_get(u.path, qs) or playlists.handle_get(u.path, qs) or recipes.handle_get(u.path, qs)
@@ -2740,6 +2741,7 @@ def main():
     notify_people.init(sys.modules[__name__])
     gigs.init(sys.modules[__name__])
     alarms.init(sys.modules[__name__])
+    inbox.init(sys.modules[__name__])
     load_jobs()
     threading.Thread(target=scan_loop, daemon=True).start()
     threading.Thread(target=retry_loop, daemon=True).start()

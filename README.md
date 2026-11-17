@@ -30,6 +30,8 @@
 - **Messages on WhatsApp or ntfy.** New mixes from shows you follow, a Sunday note about your week, downloads ready: each person chooses (WhatsApp through [WAHA](https://waha.devlike.pro)).
 - **Gigs near you.** Upcoming shows by artists you follow or play a lot, near your city or within a distance, in For You and as a message (from Bandsintown).
 - **Alarms and automations.** Wake up to a playlist, smart mix, show or radio on a Home Assistant speaker, getting louder. A hook address lets Home Assistant automations start music ("when I get home").
+- **Songs from your mixes.** Every song in your mixes' tracklists that you don't have, in one list: get them all from your sources into a playlist, or buy the rest (Traxsource, Beatport, Bandcamp, Juno links).
+- **The inbox.** Drop music you bought (files or zips) into `Music/_inbox` and Umculo files it with tags and covers. Works well with [bandcampsync](https://github.com/meeb/bandcampsync) pointed at the inbox.
 - **Watch the mix.** Turn on *Video* while a DJ mix plays and the set's video plays along, in step with the audio. Tick *Also save the video* when you download a mix or subscribe to a show to keep the video too (up to 720p, next to the mix in a hidden `.video` folder).
 - **Tidy-up tools.** One folder per artist, duplicates removed, cover art and lyrics added.
 - **Family accounts.** Everyone gets their own library, playlists and history. You choose what each person can do, and they can ask you for songs.
@@ -92,6 +94,7 @@ Most settings live in the app (**Settings**). These are set in `docker-compose.y
 | `NTFY_URL` | | Phone notifications |
 | `LISTENBRAINZ_USER` | | Better recommendations from your ListenBrainz history |
 | `HOST_PATHS` | `/mnt/Storage/Media=/data` | Host-to-container folder mapping, for reading old playlists that use host paths |
+| `INBOX_DIR` | `/data/Music/_inbox` | Drop bought songs or zips here to have them filed |
 | `COOK_MIN_SECONDS` | `45` | Shortest song a Cook will include (skips intros and skits) |
 | `HA_URL`, `HA_TOKEN`, `HA_MEDIA_BASE` | | Home Assistant, for playing on speakers (or set it up in the app); `HA_MEDIA_BASE` is the address speakers use to reach Umculo, e.g. `http://192.168.0.2:8095` |
 | `WAHA_URL`, `WAHA_KEY`, `WAHA_SESSION` | | WhatsApp messages through WAHA (or set it up in the app) |

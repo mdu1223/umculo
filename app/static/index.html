@@ -457,6 +457,7 @@ nav.tabs button{font-size:11px}
 .switch span{position:absolute;inset:0;border-radius:99px;background:var(--line);transition:.2s;cursor:pointer}
 .switch span::after{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.2s}
 .switch input:checked+span{background:var(--accent)}.switch input:checked+span::after{transform:translateX(18px)}
+.buy{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:8px 4px 4px;font-size:13px}.buy a{color:var(--accent);font-weight:700;text-decoration:none}
 .radio-in{display:flex;gap:8px;margin:0 0 10px}.radio-in .field{flex:1;margin:0}
 .rtile{flex:none;width:150px;height:96px;border:0;border-radius:16px;padding:12px;text-align:left;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;cursor:pointer;color:#fff;
   background:linear-gradient(135deg,hsl(var(--h) 65% 42%),hsl(calc(var(--h) + 50) 70% 28%))}
@@ -700,7 +701,7 @@ function renderSearch() {
     else h += `<div class="empty small">${sCatBusy ? "Searching the internet…" : "Keep typing, or press Search to look on the internet too."}</div>`;
   }
   if (f === "albums" && !L.albums.length) h += `<div class="empty">No albums in your library match “${ql}”.</div>`;
-  if (f === "all" || f === "songs") h += `<button class="free" onclick="startFree()">Can't see the exact version? <b>Search every source for “${ql}”</b><br><small>Tip: type it as Artist - Title (Remixer Mix)</small></button>`;
+  if (f === "all" || f === "songs") h += `<button class="free" onclick="startFree()">Can't see the exact version? <b>Search every source for “${ql}”</b><br><small>Tip: type it as Artist - Title (Remixer Mix)</small></button>` + buyRow(sQ);
   $("#results").innerHTML = h;
 }
 let homeLib = null;
@@ -790,7 +791,7 @@ function renderResultsOld(r, heard) {
   }
   h += `<h2>Catalogue</h2>`;
   h += r.catalog.length ? r.catalog.map((t,i) => trackCard(t,i,"cat")).join("") : `<div class="empty">Not in the catalogue. Bootlegs and DJ edits often aren't; search the sources directly below.</div>`;
-  h += `<button class="free" onclick="startFree()">Can't see the exact version? <b>Search every source for “${esc(lastQuery)}”</b><br><small>Tip: type it as Artist - Title (Remixer Mix)</small></button>`;
+  h += `<button class="free" onclick="startFree()">Can't see the exact version? <b>Search every source for “${esc(lastQuery)}”</b><br><small>Tip: type it as Artist - Title (Remixer Mix)</small></button>` + buyRow(lastQuery);
   $("#results").innerHTML = h;
 }
 
@@ -2489,9 +2490,10 @@ function chapHTML(it) {
   if (!c.tracks.length) return `<div class="chapbox"><div class="muted">${esc(c.message || "No songs found in this mix.")}</div>
     <button class="btn small ghost" style="margin-top:8px" onclick="findChapters()">Try again</button></div>`;
   const k = chapAt(c, $("#player").currentTime);
-  return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2></div>` + c.tracks.map((x, i) => `<div class="qrow chap${i === k ? " on" : ""}" data-ci="${i}" ${x.t != null ? `onclick="chapSeek(${x.t})"` : ""}>
+  const missing = c.tracks.filter(x => !x.owned && x.artist).length;
+  return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2>${missing && c.find ? `<button class="btn small ghost" onclick="getMixSongs('${c.find}', this)" title="Make a playlist of this mix's songs and get the ones you don't have from your sources">Get the ${missing} missing</button>` : ""}</div>` + c.tracks.map((x, i) => `<div class="qrow chap${i === k ? " on" : ""}" data-ci="${i}" ${x.t != null ? `onclick="chapSeek(${x.t})"` : ""}>
       <span class="time">${x.t != null ? hms(x.t) : "–"}</span><div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}${x.owned ? ` · <span class="own">in your library</span>` : ""}</div></div>
-      <button class="icon sm" onclick="event.stopPropagation(); searchFor(${esc(JSON.stringify(x.artist + " " + x.title))})" aria-label="Find this song" title="Find this song">${icon("more", 18)}</button></div>`).join("");
+      <button class="icon sm" onclick="event.stopPropagation(); songMenu(${esc(JSON.stringify(x.artist))}, ${esc(JSON.stringify(x.title))})" aria-label="Find or buy this song" title="Find or buy this song">${icon("more", 18)}</button></div>`).join("");
 }
 function chapTick() {
   const it = pq[pi], c = it && chapCache[it.nd_id]; if (!c || !c.tracks?.length || !npOpen()) return;
@@ -2505,6 +2507,38 @@ async function findChapters() {
   const it = pq[pi]; if (!it?.nd_id) return;
   try { await api(`/api/chapters/${it.nd_id}/find`, {method: "POST"}); toast("Listening to the mix; songs appear here as they're found"); delete chapCache[it.nd_id]; renderPlayer(); }
   catch (e) { toast(e.message); }
+}
+/* ---------- songs from your mixes: find them on your sources, or buy them ---------- */
+const STORES = [["Traxsource", q => `https://www.traxsource.com/search?term=${q}`], ["Beatport", q => `https://www.beatport.com/search?q=${q}`],
+  ["Bandcamp", q => `https://bandcamp.com/search?q=${q}&item_type=t`], ["Juno", q => `https://www.junodownload.com/search/?q%5Ball%5D%5B%5D=${q}`]];
+function buyRow(q) {
+  if (!(q || "").trim()) return "";
+  const e = encodeURIComponent(q.trim());
+  return `<div class="buy"><span class="muted">Buy it (then drop it in your inbox folder):</span>${STORES.map(([n, u]) => `<a href="${u(e)}" target="_blank" rel="noopener">${n}</a>`).join("")}</div>`;
+}
+function songMenu(artist, title) {
+  const q = `${artist} - ${title}`;
+  openSheet(`<div class="grab"></div><div class="rowline"><div class="meta"><b>${esc(title)}</b><div class="muted">${esc(artist)}</div></div></div>
+    <div class="menu"><button onclick="searchFor(${esc(JSON.stringify(q))})">Search for it (your library, the internet, every source)</button></div>${buyRow(q)}`);
+}
+async function getMixSongs(find, btn) {
+  await busy(btn, async () => { const r = await api("/api/chapters/wanted/get", {method: "POST", body: JSON.stringify({find, name: (pq[pi]?.title || "Mix songs").slice(0, 80)})});
+    toast(`Getting ${plural(r.songs, "song")} from your sources into a playlist of this mix`); });
+}
+async function openWanted() {
+  openSheet(`<div class="grab"></div><div class="empty"><span class="spin"></span></div>`);
+  let r, ib; try { [r, ib] = await Promise.all([api("/api/chapters/wanted"), api("/api/inbox").catch(() => null)]); } catch (e) { return setPanel(`<div class="empty">${esc(e.message)}</div>`); }
+  LISTS.wanted = r.songs;
+  setPanel(`<div class="grab"></div><div class="rowline"><div class="meta"><div class="t" style="font-size:20px;font-weight:800">Songs from your mixes</div>
+      <div class="muted">${plural(r.songs.length, "song")} in your mixes' tracklists that you don't have yet</div></div><button class="icon" onclick="closeSheet()" aria-label="Close">✕</button></div>
+    ${r.songs.length ? `<button class="btn" style="width:100%" onclick="getWantedAll(this)">Get them all from your sources</button>
+      <div class="muted" style="margin:6px 4px 12px">They go into one playlist, “Songs from my mixes”. Songs no source has stay listed there: buy those and drop them in your inbox.</div>` : ""}
+    ${ib ? `<div class="box"><b>Your inbox folder</b><div class="muted">Drop songs or zips you bought (Traxsource, Beatport, Bandcamp, Juno) into <code>${esc(ib.folder)}</code> and Umculo files them with tags and covers.${ib.waiting ? ` ${plural(ib.waiting, "file")} waiting.` : ""}${ib.filed.length ? `<br>Last filed: ${ib.filed.slice(0, 3).map(x => esc(x.artist + " - " + x.title)).join(", ")}` : ""}${ib.problems.length ? `<br>Couldn't file: ${ib.problems.slice(0, 3).map(x => esc(x.file + " (" + x.why + ")")).join(", ")}` : ""}</div></div>` : ""}
+    <div class="box">${r.songs.map(x => `<div class="rowline trk"><div class="meta"><b>${esc(x.title)}</b><div class="muted">${esc(x.artist)} · in ${esc(x.mixes.slice(0, 2).join(", "))}${x.mixes.length > 2 ? ` +${x.mixes.length - 2}` : ""}</div></div>
+      <button class="icon" onclick="songMenu(${esc(JSON.stringify(x.artist))}, ${esc(JSON.stringify(x.title))})" aria-label="Find or buy">${icon("more", 18)}</button></div>`).join("") || `<div class="muted">You have every song from your mixes' tracklists. Use “Find the songs” on more mixes.</div>`}</div>`);
+}
+async function getWantedAll(btn) {
+  await busy(btn, async () => { const r = await api("/api/chapters/wanted/get", {method: "POST", body: "{}"}); toast(`Getting ${plural(r.songs, "song")}: watch them arrive under Queue`); });
 }
 function searchFor(q) { closeSheet(); show("search"); doSearch(q); }
 /* ---------- video for DJ mixes: a muted picture kept in step with the audio ---------- */
@@ -3187,7 +3221,8 @@ async function renderLibPane() {
   head.innerHTML = `Mixes <span class="count">${libMixes.length}</span>`;
   pane.innerHTML = (libMixes.length ? `<div class="agrid albums">${libMixes.map(m => albumCard({...m, artist: `${plural(m.songs, "episode")} · ${ago(m.latest)}`, year: 0})).join("")}</div>`
       : `<div class="empty">No DJ mixes or episodes yet. Paste a SoundCloud, Mixcloud or podcast link to get one.</div>`) +
-    `<div id="vid-all"></div><button class="btn ghost" style="width:100%;margin-top:12px" onclick="show('mixes')">Paste a link or manage subscriptions</button>`;
+    `<div id="vid-all"></div><button class="btn ghost" style="width:100%;margin-top:12px" onclick="openWanted()">${icon("queue", 18)} Songs from your mixes you don't have</button>
+    <button class="btn ghost" style="width:100%;margin-top:12px" onclick="show('mixes')">Paste a link or manage subscriptions</button>`;
   if (libMixes.length) vidAllShow();
 }
 /* every mix's video, saved next to it (one at a time on the server) */

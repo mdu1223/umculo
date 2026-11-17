@@ -24,7 +24,7 @@ FULL_NEXT = [False]
 HOST_MAP = [(h.split("=")[0], h.split("=")[1]) for h in os.environ.get("HOST_PATHS", "/mnt/Storage/Media=/data").split(",") if "=" in h]
 SCAN = {"running": False, "count": 0, "last": 0, "took": 0, "added": 0, "changed": 0, "removed": 0, "error": ""}
 AUDIO = ("mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "aiff", "aif", "wma", "alac", "ape", "wv", "dsf", "mp4")
-SKIP_DIRS = {".", "_playlists", "@eaDir", ".metube", "#recycle", "lost+found"}
+SKIP_DIRS = {".", "_playlists", "_inbox", "@eaDir", ".metube", "#recycle", "lost+found"}
 COVERS = ("cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png", "album.jpg", "albumart.jpg")
 
 SCHEMA = """
