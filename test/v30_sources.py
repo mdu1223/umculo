@@ -50,6 +50,7 @@ fp = g["first_pass"](3600, 60)
 check(len(fp) == 20 and fp[0] == 30 and fp[1] - fp[0] == 180, f"the first pass covers an hour in 20 bits {fp[:3]} {len(fp)}")
 res = {30: ("A", "One"), 210: ("A", "One"), 390: ("B", "Two"), 570: None, 750: ("C", "Three")}
 check(g["refine"](res, 60) == [300, 480, 660], f"listen again only where the song changes {g['refine'](res, 60)}")
+check(g["refine"]({30: ("A", "1"), 120: ("B", "2")}, 60) == [], "not closer than 90 seconds")
 # the inbox
 M = os.path.join(S, "data", "Music"); inbox = os.path.join(M, "_inbox"); os.makedirs(inbox, exist_ok=True)
 def mp3(path, artist, title):

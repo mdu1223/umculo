@@ -919,7 +919,7 @@ def refine(res, step):
     plays through both doesn't need the bit in between."""
     offs, out = sorted(res), []
     for a, b in zip(offs, offs[1:]):
-        if b - a < step * 1.5:
+        if b - a < step * 2:                       # 90 s apart is close enough: a song lasts 4 to 7 minutes
             continue
         ra, rb = res[a], res[b]
         if ra and rb and core.song_key(*ra) == core.song_key(*rb):
@@ -1008,7 +1008,7 @@ def run_find(f):
             tmpdir = os.path.join(core.CONFIG["staging"], req["id"])
             os.makedirs(tmpdir, exist_ok=True)
             first = first_pass(dur, step)
-            cap = max(len(first), int(dur // step) + 5)
+            cap = len(first) * 2 + 2                     # the first pass, and at most as many again where songs change
 
             def say(hit_now=False):
                 n, waiting = state["n"], PACER.until > time.time()
