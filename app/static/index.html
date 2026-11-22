@@ -495,12 +495,96 @@ nav.tabs button{font-size:11px}
   background:linear-gradient(135deg,hsl(var(--h) 65% 42%),hsl(calc(var(--h) + 50) 70% 28%))}
 .rtile b{font-size:15px;line-height:1.15}.rtile span{font-size:11px;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;z-index:30;display:none;max-width:90vw}
+
+/* ---------- every screen: pieces the desktop layout uses ---------- */
+.desk-only{display:none}.side-brand{display:none}.view-title{display:none}.mini-ctl{display:flex;align-items:center}
+.miniplayer .icon.lit{color:var(--accent)}
+.miniplayer .icon i{position:absolute;font-size:9px;font-style:normal;font-weight:800;margin:9px 0 0 -6px}
+/* ---------- desktop: sidebar, wide content, a docked now-playing panel and a full player bar ---------- */
+@media (min-width:1100px){
+  :root{--side:240px;--bar:84px;--dockw:0px}
+  body.docked{--dockw:384px}
+  body{overflow-y:scroll}
+  nav.tabs{top:0;bottom:var(--bar);right:auto;width:var(--side);flex-direction:column;justify-content:flex-start;align-items:stretch;gap:2px;
+    padding:22px 12px 16px;border-top:0;border-right:1px solid var(--line);background:var(--bg)}
+  .side-brand{display:block;font-weight:900;font-size:27px;letter-spacing:-.035em;padding:2px 14px 22px;cursor:pointer;user-select:none}
+  .side-brand span{color:var(--accent)}
+  nav.tabs button{flex:none;max-width:none;flex-direction:row;justify-content:flex-start;gap:14px;padding:10px 14px;border-radius:12px;
+    font-size:14.5px;font-weight:650;color:var(--quiet);transition:background .15s,color .15s}
+  nav.tabs button:hover{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink)}
+  nav.tabs button.on{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent)}
+  nav.tabs svg{width:21px;height:21px}
+  nav.tabs .badge{position:static;margin-left:auto}
+  header{margin:0 var(--dockw) 0 var(--side);padding:16px 36px 14px;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  header .brand{visibility:hidden;width:0;overflow:hidden}
+  .view-title{font-size:26px;font-weight:850;letter-spacing:-.025em}
+  .top,form.search{max-width:1240px}
+  form.search{margin-top:0;position:absolute;left:36px;right:180px;top:14px;max-width:620px}
+  header .top{min-height:44px}
+  main{max-width:none;margin:0 var(--dockw) 0 var(--side);padding:18px 36px calc(var(--bar) + 48px)}
+  main>section{max-width:1240px;margin:0 auto}
+  #login{margin-left:var(--side)}
+  h2{margin-top:30px}
+  .shelf{margin:0;padding:2px 2px 10px;scroll-padding-inline:0;scrollbar-width:thin}
+  .mx-shelf .mxc{width:300px}
+  .mx-grid{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:22px 18px}
+  .mx-search{max-width:720px;background:transparent;position:static}
+  .mx-rowh b{font-size:19px}
+  .box,.card{transition:background .15s}
+  .qrow:hover,.rowline.trk:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
+  /* menus: a dialog in the middle of the page */
+  .sheet .scrim{background:rgba(0,0,0,.5);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+  .sheet .panel{width:640px;top:7vh;bottom:auto;max-height:84vh;border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.45);padding:20px 22px 28px;animation:dlg .18s ease}
+  @keyframes dlg{from{opacity:0;transform:translateX(-50%) translateY(10px) scale(.985)}}
+  .sheet .panel .grab{display:none}
+  /* the now-playing panel */
+  #dock{position:fixed;right:0;top:0;bottom:var(--bar);width:var(--dockw);z-index:12;border-left:1px solid var(--line);background:var(--bg)}
+  #dock .dpanel{position:absolute;inset:0;left:0;right:0;bottom:0;width:auto;max-height:none;transform:none;border-radius:0;overflow:auto;padding:14px 18px 28px;
+    scrollbar-width:thin;background:linear-gradient(180deg,color-mix(in srgb,var(--tint,var(--panel)) 30%,var(--bg)) 0,var(--bg) 340px)}
+  #dock .grab{display:none}
+  #dock .np{max-width:none}
+  #dock .np-art{width:100%;max-width:348px;margin:6px auto 16px;border-radius:16px}
+  #dock .np-art.vid{width:100%;max-width:none}
+  #dock .np-meta .t{font-size:19px}#dock .np-meta .s{font-size:14.5px}
+  #dock .np .ctrl,#dock #np-seek,#dock .np .times{display:none}            /* the player bar has them */
+  #dock .np-acts{margin-top:10px}
+  #dock .np-from{font-size:11.5px}
+  /* the player bar */
+  .miniplayer{left:0;right:0;bottom:0;max-width:none;margin:0;height:var(--bar);border-radius:0;border:0;border-top:1px solid var(--line);padding:0 20px;gap:0 14px;z-index:16;
+    background:var(--panel);box-shadow:0 -8px 30px rgba(0,0,0,.12)}
+  .miniplayer.on{display:grid;grid-template-columns:56px minmax(140px,1fr) minmax(380px,640px) minmax(140px,1fr);grid-template-rows:1fr 1fr;align-items:center}
+  .mini-art{grid-row:1/3;width:56px;height:56px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+  .miniplayer .meta{grid-row:1/3;align-self:center}
+  .miniplayer .meta .t{font-size:14.5px}.miniplayer .meta .s{font-size:12.5px}
+  .miniplayer .icon{border:0;background:none;width:36px;height:36px;color:var(--quiet);transition:color .15s,background .15s}
+  .miniplayer .icon:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 8%,transparent)}
+  .miniplayer .icon.lit{color:var(--accent)}
+  .mini-ctl{grid-column:3;grid-row:1;justify-content:center;gap:10px;align-self:end}
+  .mini-ctl .icon{position:relative}
+  .miniplayer #mini-pp{width:40px;height:40px;border-radius:50%;background:var(--ink);color:var(--bg);display:grid;place-items:center;transition:transform .12s}
+  .miniplayer #mini-pp:hover{transform:scale(1.06);background:var(--ink);color:var(--bg)}#mini-pp svg{width:20px;height:20px}
+  .mini-seek{display:flex;grid-column:3;grid-row:2;align-items:center;gap:10px;font-size:11.5px;color:var(--quiet);font-variant-numeric:tabular-nums;align-self:start;padding-top:4px}
+  .mini-seek span{width:44px}.mini-seek span:first-child{text-align:right}
+  .mini-right{display:flex;grid-column:4;grid-row:1/3;justify-content:flex-end;align-items:center;gap:4px}
+  .desk-only{display:inline-flex}.mini-seek.desk-only{display:flex}.view-title{display:block}
+  .miniplayer .prog{display:none}
+  .miniplayer input[type=range]{-webkit-appearance:none;appearance:none;height:4px;border-radius:4px;flex:1;cursor:pointer;
+    background:linear-gradient(90deg,var(--ink) var(--v,0%),color-mix(in srgb,var(--ink) 18%,transparent) var(--v,0%))}
+  .miniplayer input[type=range]:hover{background:linear-gradient(90deg,var(--accent) var(--v,0%),color-mix(in srgb,var(--ink) 18%,transparent) var(--v,0%))}
+  .miniplayer input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--ink);opacity:0;transition:opacity .15s}
+  .miniplayer input[type=range]:hover::-webkit-slider-thumb{opacity:1}
+  .miniplayer input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:50%;background:var(--ink)}
+  .vol{display:flex;align-items:center;gap:4px;width:150px}.vol input{width:96px}
+  .toast{bottom:calc(var(--bar) + 20px)}
+  ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 16%,transparent);border-radius:10px;border:3px solid var(--bg)}
+}
+@media (min-width:1100px) and (prefers-reduced-motion:reduce){.sheet .panel{animation:none}.mxc-th img{transition:none}}
 </style>
 </head>
 <body>
 <header>
   <div class="top">
-    <div class="brand">um<span>culo</span></div>
+    <div class="brand">um<span>culo</span></div><div class="view-title" id="view-title"></div>
     <div class="hdr-btns">
     <button class="icon stat-btn" onclick="openStatus()" title="Status" aria-label="Status">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>
@@ -571,6 +655,7 @@ nav.tabs button{font-size:11px}
 </main>
 
 <nav class="tabs">
+  <div class="side-brand" onclick="show('search')">um<span>culo</span></div>
   <button id="tab-search" class="on" onclick="show('search')"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search</button>
   <button id="tab-foryou" onclick="show('foryou')"><svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.6L20 9.3l-4.4 3.9L17 19l-5-3.1L7 19l1.4-5.8L4 9.3l5.8-.7z"/></svg>For You</button>
   <button id="tab-library" onclick="show('library')"><svg viewBox="0 0 24 24"><path d="M5 4v16M9 4v16M13 5l4 15M19 4v16"/></svg>Library</button>
@@ -583,12 +668,25 @@ nav.tabs button{font-size:11px}
   <div class="scrim" onclick="closeSheet()"></div>
   <div class="panel" id="panel"></div>
 </div>
+<aside id="dock" hidden aria-label="Now playing"><div class="panel dpanel" id="dpanel"></div></aside>
 <div id="stage" hidden></div><audio id="player"></audio><audio id="player2" preload="auto"></audio>
 <div class="miniplayer" id="mini">
   <div id="mini-art" class="mini-art" onclick="openPlayer()"></div>
   <div class="meta" onclick="openPlayer()"><div class="t" id="mini-t"></div><div class="s" id="mini-s"></div></div>
-  <button class="icon" id="mini-pp" onclick="togglePlay()" aria-label="Pause"></button>
-  <button class="icon" onclick="nextTrack()" title="Next"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+  <div class="mini-ctl">
+    <button class="icon desk-only" onclick="toggleShuffle(); renderMiniDesk()" id="mini-shuf" aria-label="Shuffle" title="Shuffle (S)"></button>
+    <button class="icon desk-only" onclick="prevTrack()" aria-label="Previous" title="Previous"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+    <button class="icon" id="mini-pp" onclick="togglePlay()" aria-label="Pause"></button>
+    <button class="icon" onclick="nextTrack()" aria-label="Next" title="Next"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+    <button class="icon desk-only" onclick="cycleRepeat(); renderMiniDesk()" id="mini-rep" aria-label="Repeat" title="Repeat (R)"></button>
+  </div>
+  <div class="mini-seek desk-only"><span id="mini-cur">0:00</span><input type="range" id="mini-seek" min="0" max="1000" value="0" step="1" aria-label="Seek"><span id="mini-dur">0:00</span></div>
+  <div class="mini-right desk-only">
+    <button class="icon" onclick="openPlayer(); showLyrics()" aria-label="Lyrics" title="Lyrics (L)" id="mini-lyr"></button>
+    <button class="icon" onclick="toggleDock()" aria-label="Now playing panel" title="Now playing panel" id="mini-dock"></button>
+    <button class="icon" onclick="openPlayer(); castSheet()" aria-label="Play on…" title="Play on a speaker or TV" id="mini-cast"></button>
+    <span class="vol"><button class="icon" onclick="toggleMute()" aria-label="Mute" title="Mute (M)" id="mini-volb"></button><input type="range" id="mini-vol" min="0" max="100" value="100" aria-label="Volume"></span>
+  </div>
   <div class="prog"><i id="mini-prog"></i></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -619,6 +717,7 @@ function show(view) {
     $("#tab-"+v).classList.toggle("on", v === view);
   }
   $("#search-form").style.display = view === "search" ? "" : "none";
+  $("#view-title").textContent = view === "search" ? "" : {foryou: "For You", library: "Library", requests: "Queue", playlists: "Playlists", mixes: "Mixes"}[view];
   if (view === "requests") loadRequests();
   if (view === "playlists") loadPlaylists();
   if (view === "mixes") { loadMixes(); loadMixFeed(); }
@@ -921,7 +1020,15 @@ async function moreLike(id) {
   } catch (err) { el.innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
 }
 function openSheet(html) { $("#sheet").classList.add("open"); $("#panel").classList.remove("np-panel"); setPanel(html); }
-function setPanel(html) { const p = $("#panel"); const y = p.scrollTop; p.innerHTML = html; p.scrollTop = y; }
+/* desktop: the player lives in a docked panel on the right; menus still open as a dialog over the page */
+const DESK = matchMedia("(min-width:1100px)"), desk = () => DESK.matches;
+const dockShown = () => desk() && !$("#dock").hidden;
+const npHost = () => desk() ? $("#dpanel") : $("#panel");
+function setPanel(html) {                     // a menu goes to the dialog; the player's own pages (cast, cook…) to the dock when it's showing
+  const p = desk() && !$("#sheet").classList.contains("open") && dockShown() ? $("#dpanel") : $("#panel");
+  const y = p.scrollTop; p.innerHTML = html; p.scrollTop = y;
+}
+function setHost(html) { const p = npHost(); const y = p.scrollTop; p.innerHTML = html; p.scrollTop = y; }
 function closeSheet() { $("#sheet").classList.remove("open"); clearTimeout(logTimer); clearTimeout(checkTimer); clearTimeout(jobTimer); clearTimeout(findTimer); clearTimeout(libTimer); pickFor = null; }
 
 /* ---------- requests ---------- */
@@ -2088,7 +2195,7 @@ function srcFor(it) {                         // the stream key lets AirPlay, Ch
 }
 /* gapless and crossfade: the next song loads in a second player and takes over the moment this one ends */
 const canFade = (() => { try { const a = new Audio(); a.volume = 0.5; return a.volume === 0.5; } catch (e) { return false; } })();
-let xfade = 0;                                // read once the saved settings are set up (below)
+let xfade = 0, masterVol = 1, volBefore = 1;                                // read once the saved settings are set up (below)
 function prepNext() {                        // (iPhones only allow one player in the background, so they keep the one)
   const n = pq[pi + 1], sp = $("#player2");
   if (!canFade || !n || repeatMode === "one" || sleepEnd || sp._for === qid(n)) return;
@@ -2104,11 +2211,11 @@ function swapPlayers(fade) {
   const old = $("#player"), p = $("#player2");
   for (const k of ["onloadedmetadata", "onplaying", "onpause", "onended", "onerror", "ontimeupdate"]) old[k] = null;
   old.id = "player2"; p.id = "player"; old._for = null; p._for = null; p._xf = false;
-  const done = () => { old.pause(); old.removeAttribute("src"); old.load(); try { old.volume = 1; } catch (e) {} };
-  if (!fade || !canFade) { done(); try { p.volume = 1; } catch (e) {} return p; }
+  const done = () => { old.pause(); old.removeAttribute("src"); old.load(); try { old.volume = masterVol; } catch (e) {} };
+  if (!fade || !canFade) { done(); try { p.volume = masterVol; } catch (e) {} return p; }
   p.volume = 0; let k = 0; const steps = Math.round(fade * 20);
   const t = setInterval(() => { k++; const x = Math.min(1, k / steps);
-    try { p.volume = Math.sin(x * Math.PI / 2); old.volume = Math.cos(x * Math.PI / 2); } catch (e) {}
+    try { p.volume = masterVol * Math.sin(x * Math.PI / 2); old.volume = masterVol * Math.cos(x * Math.PI / 2); } catch (e) {}
     if (x >= 1) { clearInterval(t); done(); } }, 50);
   return p;
 }
@@ -2234,6 +2341,7 @@ async function cookMix(kind, it) {
 }
 function playAt(fade) {
   const it = pq[pi]; if (!it) return;
+  if (desk() && !dockShown() && store.get("umc_dock", true)) setTimeout(openPlayer, 0);   // desktop: the now-playing panel opens beside
   let p = $("#player");
   reportListen();
   it.q = null;
@@ -2271,7 +2379,7 @@ function bindPlayer(it, startAt) {
   p.onended = () => { if (isLong(it)) store.set(posKey(it), 0); advance(true); };
   p.onerror = () => { if (!p.src || p.src === location.href) return; errRun++; toast(errRun >= 3 ? "Several songs wouldn't play; stopped. Check the status page." : "Couldn't play " + it.title);
     $("#mini-s").textContent = "Couldn't play this one · " + it.artist; setPP(true); if (errRun < 3 && pi < pq.length - 1) nextTrack(); };
-  p.ontimeupdate = () => { const pc = p.duration ? p.currentTime * 100 / p.duration : 0; $("#mini-prog").style.width = pc + "%";
+  p.ontimeupdate = () => { const pc = p.duration ? p.currentTime * 100 / p.duration : 0; $("#mini-prog").style.width = pc + "%"; miniSeekTick(p);
     const d = p.currentTime - lastT; if (d > 0 && d < 2 && playedFor === it) it._played += d; lastT = p.currentTime;
     if (p.currentTime > 4) warmNext();
     if (p.duration && p.duration - p.currentTime < 45) prepNext();
@@ -2295,6 +2403,7 @@ function bindPlayer(it, startAt) {
 const store = {get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }};
 if (canFade) xfade = store.get("umc_xfade", 0);
+masterVol = store.get("umc_vol", 1); for (const el of [$("#player"), $("#player2")]) try { el.volume = masterVol; } catch (e) {}
 let shuffleOn = store.get("umc_shuffle", false), repeatMode = store.get("umc_repeat", "off"), keepCook = store.get("umc_keepcook", "local");
 let cooking = false, sleepAt = 0, sleepEnd = false, sleepTimer = null, unshuffled = null;
 const LONG = 10 * 60;                         // DJ mixes and episodes: remember where you were, allow faster playback
@@ -2449,10 +2558,48 @@ function moreSheet() {
 function clearUpcoming() { pq = pq.slice(0, pi + 1); saveQueue(); toast("Cleared what's next"); renderPlayer(); }
 function qPlayNext(i) { const [x] = pq.splice(i, 1); if (i < pi) pi--; pq.splice(pi + 1, 0, x); saveQueue(); renderPlayer(); toast("Playing next"); }
 function qRemove(i) { if (i === pi) return; pq.splice(i, 1); if (i < pi) pi--; saveQueue(); renderPlayer(); }
-const npOpen = () => $("#sheet").classList.contains("open") && $("#np");
-function openPlayer() { if (!pq[pi]) return; npView = npView === "lyrics" ? "lyrics" : "next"; openSheet(`<div id="np"></div>`); $("#panel").classList.add("np-panel"); renderPlayer(); }
+const npOpen = () => (desk() ? dockShown() : $("#sheet").classList.contains("open")) && !!npHost().querySelector("#np");
+function openPlayer() {
+  if (!pq[pi]) return; npView = npView === "lyrics" ? "lyrics" : "next";
+  if (desk()) { $("#dock").hidden = false; document.body.classList.add("docked"); store.set("umc_dock", true);
+    if (!npHost().querySelector("#np")) setHost(`<div id="np"></div>`); renderPlayer(); renderMiniDesk(); return; }
+  openSheet(`<div id="np"></div>`); $("#panel").classList.add("np-panel"); renderPlayer();
+}
+function closeNp() { if (desk()) { $("#dock").hidden = true; document.body.classList.remove("docked"); store.set("umc_dock", false); vidSync(); renderMiniDesk(); } else closeSheet(); }
+function toggleDock() { dockShown() && npHost().querySelector("#np") ? closeNp() : (pq[pi] ? openPlayer() : null); }
+DESK.addEventListener("change", () => {        // the window crossed the desktop width
+  if (desk()) { closeSheet(); if (pq[pi] && store.get("umc_dock", true)) openPlayer(); }
+  else { $("#dock").hidden = true; document.body.classList.remove("docked"); $("#dpanel").innerHTML = ""; }
+});
+function setVol(v) {
+  masterVol = Math.max(0, Math.min(1, v)); store.set("umc_vol", masterVol);
+  for (const el of [$("#player"), $("#player2")]) try { el.volume = masterVol; } catch (e) {}
+  renderMiniDesk();
+}
+function toggleMute() { if (masterVol > 0) { volBefore = masterVol; setVol(0); } else setVol(volBefore || 1); }
+function renderMiniDesk() {
+  if (!desk()) return;
+  const sh = $("#mini-shuf"), rp = $("#mini-rep");
+  if (sh) { sh.innerHTML = icon("shuffle", 18); sh.classList.toggle("lit", !!shuffleOn); }
+  if (rp) { rp.innerHTML = icon("repeat", 18) + (repeatMode === "one" ? "<i>1</i>" : ""); rp.classList.toggle("lit", repeatMode !== "off"); }
+  $("#mini-lyr").innerHTML = icon("lyrics", 18); $("#mini-cast").innerHTML = icon("cast", 18); $("#mini-cast").classList.toggle("lit", !!spk);
+  $("#mini-dock").innerHTML = icon("queue", 18); $("#mini-dock").classList.toggle("lit", dockShown());
+  $("#mini-volb").innerHTML = masterVol === 0 ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9h4l5-4v14l-5-4H4zM17 9l4 6M21 9l-4 6"/></svg>`
+    : `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9h4l5-4v14l-5-4H4z"/>${masterVol > .05 ? '<path d="M16.5 9.5a3.5 3.5 0 0 1 0 5"/>' : ""}${masterVol > .5 ? '<path d="M18.8 7a7 7 0 0 1 0 10"/>' : ""}</svg>`;
+  $("#mini-vol").value = Math.round(masterVol * 100);
+  $("#mini-vol").style.setProperty("--v", Math.round(masterVol * 100) + "%");
+}
+(() => {
+  const sk = $("#mini-seek"); let drag = false;
+  sk.addEventListener("input", () => { drag = true; const p = $("#player"); if (p.duration) $("#mini-cur").textContent = mmss(sk.value / 1000 * p.duration); sk.style.setProperty("--v", sk.value / 10 + "%"); });
+  sk.addEventListener("change", () => { const p = $("#player"); if (p.duration) p.currentTime = sk.value / 1000 * p.duration; drag = false; });
+  $("#mini-vol").addEventListener("input", e => setVol(e.target.value / 100));
+  window.miniSeekTick = p => { if (drag || !desk()) return; const pc = p.duration ? p.currentTime / p.duration : 0;
+    sk.value = Math.round(pc * 1000); sk.style.setProperty("--v", pc * 100 + "%");
+    $("#mini-cur").textContent = mmss(p.currentTime || 0) || "0:00"; $("#mini-dur").textContent = p.duration && isFinite(p.duration) ? mmss(p.duration) : "–:––"; };
+})();
 function tintFrom(it) {                       // a soft background from the cover's colour
-  const c = it.cover_big || it.cover, set = col => { const pn = $("#panel"); if (pn && npOpen()) pn.style.setProperty("--tint", col); };
+  const c = it.cover_big || it.cover, set = col => { const pn = npHost(); if (pn && npOpen()) pn.style.setProperty("--tint", col); };
   if (it._tint) return set(it._tint);
   let h = 0; for (const ch of (it.artist || it.title || "?")) h = (h * 31 + ch.charCodeAt(0)) % 360;
   it._tint = `hsl(${h} 55% 40%)`; set(it._tint);
@@ -2465,13 +2612,13 @@ function tintFrom(it) {                       // a soft background from the cove
   im.src = c;
 }
 function renderPlayer() {
-  const it = pq[pi], p = $("#player"); if (!it || !$("#sheet").classList.contains("open")) return;
+  const it = pq[pi], p = $("#player"); if (!it || !(desk() ? dockShown() : $("#sheet").classList.contains("open"))) return;
   const pc = p.duration ? p.currentTime * 100 / p.duration : 0, up = pq.slice(pi + 1), lyr = npView === "lyrics";
   const qcls = it.q ? (it.q.tier === "lossless" ? "lossless" : qTier(it.q.quality)) : "";
   const src = it.q ? `<span class="q ${qcls}">${esc(it.q.quality)}</span> ${esc(it.q.from)}` : (it.nd_id ? "From your library" : p.readyState < 3 && !p.paused ? "Getting it from the internet… a few seconds" : "Streaming from the internet");
   const btn = (k, on, fn, label, extra = "") => `<button class="${on ? "on" : ""}" onclick="${fn}" aria-label="${label}" title="${label}" ${extra}>${icon(k)}${on === "one" ? "<i>1</i>" : ""}</button>`;
-  setPanel(`<div class="grab"></div><div id="np" class="np${lyr ? " lyrmode" : ""}${p.paused ? " paused" : ""}">
-    <div class="np-top"><button class="icon" onclick="closeSheet()" aria-label="Close">${icon("down")}</button>
+  setHost(`<div class="grab"></div><div id="np" class="np${lyr ? " lyrmode" : ""}${p.paused ? " paused" : ""}">
+    <div class="np-top"><button class="icon" onclick="closeNp()" aria-label="Close" title="Close">${icon("down")}</button>
       <div class="np-from">${it._cooked ? `Keep cooking · ${esc(typeof it._cooked === "string" ? it._cooked : "same style")}` : nowSrc?.name ? `Playing from ${esc(nowSrc.name)}` : "Now playing"}</div>
       <span class="np-topr"><button class="icon${party ? " lit" : ""}" onclick="partySheet()" aria-label="Listen together" title="Listen together">${icon("people")}</button>
       <button class="icon${spk ? " lit" : ""}" onclick="castSheet()" aria-label="Play on…" title="Play on a speaker or TV">${icon("cast")}</button>
@@ -2504,7 +2651,7 @@ function renderPlayer() {
           <button class="icon sm" onclick="event.stopPropagation(); qRemove(${i})" aria-label="Remove" title="Remove">${icon("x", 18)}</button></div>`; }).join("")
           : `<div class="empty small">${keepCook !== "off" ? `Nothing queued. When this song ends Umculo keeps cooking ${keepCook === "local" ? "from your music" : "songs you don't know"} in the same style.` : "Nothing queued after this song."}</div>`}</div>`}
   </div>`);
-  $("#panel").classList.add("np-panel"); setPP(p.paused); tintFrom(it);
+  npHost().classList.add("np-panel"); setPP(p.paused); tintFrom(it); renderMiniDesk();
   const slot = $("#np-vidslot"); if (slot) { slot.replaceWith(vidEl); vidSync(); }
   if (lyr && lyrCache[lyrKey(it)]) { const l = lyrCache[lyrKey(it)]; lyrAt = -1;
     $("#np-lyr").innerHTML = l.lines.length ? l.lines.map((x, i) => `<p data-i="${i}" ${l.synced ? `onclick="$('#player').currentTime=${(x.start || 0) / 1000}"` : ""}>${esc(x.value) || "♪"}</p>`).join("") : `<div class="empty small">No lyrics found for this song.</div>`;
@@ -2762,8 +2909,18 @@ new MutationObserver(() => { clearTimeout(markPlaying._t); markPlaying._t = setT
     else if (what === "np" && dy > 110 && dy > 2 * Math.abs(dx)) closeSheet();
   }, {passive: true});
 })();
+document.addEventListener("keydown", e => {   // computers: / searches, Esc closes a dialog (these work with nothing playing)
+  if (e.target.closest("input, textarea, select, [contenteditable]") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "/") { e.preventDefault(); const q = !$("#view-mixes").hidden ? $("#mx-q") : $("#q"); q?.focus(); q?.select(); }
+  else if (e.key === "Escape" && $("#sheet").classList.contains("open")) closeSheet();
+});
 document.addEventListener("keydown", e => {   // computers: space plays/pauses, arrows seek, shift+arrows change song
   if (e.target.closest("input, textarea, select, [contenteditable]") || e.metaKey || e.ctrlKey || e.altKey || !pq[pi]) return;
+  const kk = e.key.toLowerCase();
+  if (kk === "m") return toggleMute();
+  if (kk === "s") { toggleShuffle(); renderMiniDesk(); return; }
+  if (kk === "r") { cycleRepeat(); renderMiniDesk(); return; }
+  if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); return setVol(masterVol + (e.key === "ArrowUp" ? .05 : -.05)); }
   const p = $("#player");
   if (e.code === "Space") { e.preventDefault(); togglePlay(); }
   else if (e.key === "ArrowRight") { e.preventDefault(); if (e.shiftKey) nextTrack(); else p.currentTime = Math.min((p.duration || 0) - 1, p.currentTime + 10); }

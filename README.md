@@ -11,7 +11,7 @@
 ## What it does
 
 - **A music server for your apps.** Built-in Subsonic / OpenSubsonic API, so Subsonic apps like Arpeggi and Amperfy work with it. (A Jellyfin-style API is there too, still experimental.)
-- **A web player** that works on phones and computers: search, library (artists, playlists and DJ mixes), synced lyrics, shuffle and repeat, an editable queue that survives a reload, a sleep timer, keyboard shortcuts, lock-screen controls, a yearly "your listening" recap, light and dark mode.
+- **A web player** made for phones and for computers (on a big screen: a sidebar, a docked now-playing panel with the mix video and its songs, and a full player bar with seek and volume): search, library (artists, playlists and DJ mixes), synced lyrics, shuffle and repeat, an editable queue that survives a reload, a sleep timer, keyboard shortcuts, lock-screen controls, a yearly "your listening" recap, light and dark mode.
 - **Cook.** Start a mix from any song and it stays in that song's style. *Cook locally* uses your own music; *Just cook* finds songs you don't know yet. With *keep cooking* on, the music never just stops at the end of the queue, and it keeps to the style of what you were playing (a playlist called "Kwaito Classics" keeps cooking kwaito).
 - **Likes that matter.** A heart on every song: liked songs become favourites in your music apps, shape For You and come up more in Cook. *Not for me* keeps a song out of every mix and suggestion.
 - **Made for you.** Smart mixes built from your own library: Liked songs, On repeat, Fresh in, Rediscover, Never played, and one per style you own.
