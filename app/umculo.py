@@ -68,7 +68,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -91,6 +91,7 @@ CONFIG = {
     "config": E("CONFIG_DIR", "/config"),
     "mix_seconds": int(E("MIX_THRESHOLD", "1200")),
     "tidy_mixes": E("TIDY_MIXES", "1") == "1",           # one folder per show, the show as the album, duplicates set aside
+    "video_quality": E("VIDEO_QUALITY", "1080"),          # mix videos: 480, 720, 1080, 1440 or best
     "search_seconds": int(E("SEARCH_SECONDS", "20")),
     "deezer": E("DEEZER_API", "https://api.deezer.com").rstrip("/"),
     "sources": [s.strip() for s in E("SOURCES", "soulseek,usenet,hearthis,soundcloud,youtube").split(",") if s.strip()],
@@ -2233,6 +2234,7 @@ SETTINGS = {   # key: (type, choices or None, description)
     "slsk_stall_s": (int, None, "Drop a Soulseek peer that doesn't move after (seconds)"),
     "stream_after_s": (int, None, "Streaming sites join a playlist download after (seconds)"),
     "retry_days": (int, None, "Retry songs that weren't found after (days)"),
+    "video_quality": (str, ["480", "720", "1080", "1440", "best"], "Mix video quality (watching and saving)"),
     "ntfy": (str, None, "Notifications address (ntfy)"),
 }
 
@@ -2475,7 +2477,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif builtin():
                     POOL.submit(server.warm, who, sid, subsonic.CFG["stream_quality"], qs.get("can", [""])[0], server.network())
                 return self.send_json({"ok": True})
-            if u.path.startswith("/api/video/") and builtin() and video.handle_get(self, u.path):   # a mix's video
+            if u.path.startswith("/api/video/") and builtin() and video.handle_get(self, u.path, qs):   # a mix's video
                 return None
             if u.path.startswith("/api/mix") and mixfeed.handle_get(self, u.path, qs):          # mixes for you, streaming a mix
                 return None

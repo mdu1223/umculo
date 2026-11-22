@@ -182,7 +182,12 @@ def build(user_id, u):
             back += keep(safe(yt_channel, s["url"]), f"From {s['title']}", limit=6)
     if back:
         shelves.append({"id": "shows", "title": "More from your shows", "sub": "Mixes from channels you follow that you don't have yet", "items": back})
-    for name, _w in t["djs"][:2] + [x for x in t["shows"][:2] if x[0] not in dict(t["djs"])][:1]:
+    names = []
+    for name, _w in t["djs"][:2] + t["shows"][:3]:       # one shelf per DJ: "Noxious Deejay" and "Noxious Deejay Podcast" are one
+        k = norm(name)
+        if k and not any(k in o or o in k for o in map(norm, names)):
+            names.append(name)
+    for name in names[:3]:
         items = keep(safe(yt_search, f"{name} mix") + safe(hearthis_search, name), f"Because you play {name}")
         if len(items) >= 2:
             shelves.append({"id": "dj-" + norm(name).replace(" ", "-"), "title": f"Because you play {name}", "sub": "Their sets, and DJs like them", "items": items})
@@ -311,8 +316,16 @@ AUDIO_FMT = "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio[ext=mp3]/besta
 
 def stream(h, qs, video=False):
     page = check_url((qs.get("u") or [""])[0])
-    core.video.proxy(h, page, core.video.STREAM_FMT if video else AUDIO_FMT, "video/mp4" if video else None)
+    core.video.proxy(h, page, core.video.vfmt(core.video.quality(qs)) if video else AUDIO_FMT, "video/mp4" if video else None)
     return True
+
+
+def _warm(page):
+    try:
+        if not os.environ.get("UMCULO_TEST_MIXES"):
+            core.video.direct(page, AUDIO_FMT)
+    except Exception as ex:  # noqa: BLE001
+        core.log("mix warm-up:", ex)
 
 
 def handle_get(h, path, qs):
@@ -326,6 +339,10 @@ def handle_get(h, path, qs):
             return h.send_json({"error": str(ex)}, 400) or True
     if path == "/api/mixstream":
         return stream(h, qs)
+    if path == "/api/mixwarm":                     # get a mix's stream address ready before Play is pressed
+        page = check_url((qs.get("u") or [""])[0])
+        threading.Thread(target=lambda: _warm(page), daemon=True).start()
+        return h.send_json({"ok": True}) or True
     if path == "/api/mixvideo":
         return stream(h, qs, True)
     return None

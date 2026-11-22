@@ -97,6 +97,7 @@ Most settings live in the app (**Settings**). These are set in `docker-compose.y
 | `LISTENBRAINZ_USER` | | Better recommendations from your ListenBrainz history |
 | `HOST_PATHS` | `/mnt/Storage/Media=/data` | Host-to-container folder mapping, for reading old playlists that use host paths |
 | `INBOX_DIR` | `/data/Music/_inbox` | Drop bought songs or zips here to have them filed |
+| `VIDEO_QUALITY` | `1080` | Mix videos, for watching and saving: `480`, `720`, `1080`, `1440` or `best` (also in Settings) |
 | `COOK_MIN_SECONDS` | `45` | Shortest song a Cook will include (skips intros and skits) |
 | `HA_URL`, `HA_TOKEN`, `HA_MEDIA_BASE` | | Home Assistant, for playing on speakers (or set it up in the app); `HA_MEDIA_BASE` is the address speakers use to reach Umculo, e.g. `http://192.168.0.2:8095` |
 | `WAHA_URL`, `WAHA_KEY`, `WAHA_SESSION` | | WhatsApp messages through WAHA (or set it up in the app) |

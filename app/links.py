@@ -43,6 +43,7 @@ CONTENT_NS = "{http://purl.org/rss/1.0/modules/content/}"
 SUBS, FINDS = {}, {}
 LOCK = threading.Lock()
 FIND_POOL = cf.ThreadPoolExecutor(max_workers=1)      # one song finder at a time (be polite to Shazam)
+FETCH_POOL = cf.ThreadPoolExecutor(max_workers=3)     # but downloads don't wait for someone else's listening
 SHOWS = {}                                            # resolved links, short-lived cache for the UI
 
 
@@ -633,8 +634,55 @@ def start_find(show, e, keep=False, auto=False, owner=None):
     with LOCK:
         FINDS[fid] = f
     save_finds()
-    FIND_POOL.submit(run_find, f)
+    if keep:                                       # keeping it: download and file it now, listen when it's its turn
+        FETCH_POOL.submit(fetch_then_find, f)
+    else:
+        FIND_POOL.submit(run_find, f)
     return fid
+
+
+def fetch_then_find(f):
+    try:
+        fetch_mix(f)
+    except Exception as ex:  # noqa: BLE001
+        if not f.get("cancel"):
+            log("mix download failed:", traceback.format_exc())
+            fset(f, state="failed", message=str(ex)[:200])
+        return
+    if not f.get("cancel"):
+        fset(f, state="queued", message="In your library: waiting to listen for the songs")
+        FIND_POOL.submit(run_find, f)
+
+
+def make_req(f):
+    e, show = f["entry"], f["show_data"]
+    who = core.users.person(f.get("owner") or "admin")
+    return {"id": "f" + uuid.uuid4().hex[:11], "target": target_for(show, e), "candidate": candidate_for(show, e),
+            "stop": threading.Event(), "user": None if not who or core.users.is_admin(who) else who["id"]}
+
+
+def fetch_mix(f, req=None):
+    """Download a mix you're keeping and put it in the library, so it plays from there."""
+    e = f["entry"]
+    own = req is None
+    req = req or make_req(f)
+    RUNNING_REQ[f["id"]] = req
+    try:
+        fset(f, state="downloading", message="Downloading the mix")
+        path = dl_link(req)
+        final = core.file_into_library(path, req)
+        core.request_scan()
+        f["file"] = final
+        if e.get("page"):
+            core.video.record(final, e["page"], bool(f.get("video")))
+        f["local"] = final                           # from here on it's the library's copy: never deleted
+        fset(f, message="In your library")
+        return final
+    finally:
+        if own:
+            RUNNING_REQ.pop(f["id"], None)
+            import shutil
+            shutil.rmtree(os.path.join(core.CONFIG["staging"], req["id"]), ignore_errors=True)
 
 
 def page_tracklist(page):
@@ -713,9 +761,7 @@ def run_find(f):
     e, show = f["entry"], f["show_data"]
     if f.get("cancel"):
         return
-    who = core.users.person(f.get("owner") or "admin")
-    req = {"id": "f" + uuid.uuid4().hex[:11], "target": target_for(show, e), "candidate": candidate_for(show, e),
-           "stop": threading.Event(), "user": None if not who or core.users.is_admin(who) else who["id"]}
+    req = make_req(f)
     RUNNING_REQ[f["id"]] = req
     path = ""
     rec = None
@@ -723,16 +769,9 @@ def run_find(f):
         listed = parse_tracklist(e.get("description", ""), e.get("chapters"))
         fset(f, state="downloading", message="Downloading the mix to listen to it",
              tracks=[{**t, "from": "tracklist", "hits": 0} for t in listed])
-        path = f["local"] if f.get("local") else dl_link(req)     # a mix already in the library: just listen to it
-        if f.get("keep") and not f.get("local"):    # keeping it: into the library first, so it plays from there while we listen
-            final = core.file_into_library(path, req)
-            core.request_scan()
-            f["file"] = final
-            if e.get("page"):
-                core.video.record(final, e["page"], bool(f.get("video")))
-            path = final
-            f["local"] = final                       # from here on it's the library's copy: never deleted
-            fset(f, message="In your library: listening for the songs")
+        if f.get("keep") and not f.get("local"):    # keeping it (a find from before a restart): into the library first
+            fetch_mix(f, req)
+        path = f["local"] if f.get("local") else dl_link(req)     # a mix in the library: just listen to it
         dur = core.audio_duration(path) or e.get("duration") or 0
         rec = recognizer()
         heard, fails, rec_error = [], 0, ""

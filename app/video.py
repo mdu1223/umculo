@@ -29,8 +29,30 @@ SRC = {}                 # audio path -> {"page": url, "at": time}   ("page": ""
 URLS = {}                # page -> (direct url, headers, expires)
 SAVING = {}              # audio path -> {"state", "message", "progress"}
 SEARCH_AGAIN = 7 * 86400
-STREAM_FMT = "b[ext=mp4][height<=720]/b[ext=mp4]/b[height<=720]/b"
-SAVE_FMT = "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/bv*[height<=720]+ba/b"
+STREAM_FMT = "b[ext=mp4][height<=720]/b[ext=mp4]/b[height<=720]/b"          # picture and sound in one file (YouTube: 360p)
+QUALITIES = ["480", "720", "1080", "1440", "best"]
+
+
+def vfmt(q):
+    """The picture only, at the chosen quality: the sound comes from the audio player, so the video needs none,
+    and YouTube's picture-only streams go far beyond the 360p of its combined ones. H.264 first (every browser)."""
+    h = 4320 if q == "best" else int(q if q in QUALITIES else "1080")
+    return (f"bv*[height<={h}][vcodec^=avc1][ext=mp4]/bv*[height<={h}][ext=mp4]/bv*[height<={h}]"
+            f"/b[height<={h}][ext=mp4]/b[ext=mp4]/b")
+
+
+def save_fmt(q):
+    h = 4320 if q == "best" else int(q if q in QUALITIES else "1080")
+    return (f"bv*[height<={h}][vcodec^=avc1][ext=mp4]+ba[ext=m4a]/bv*[height<={h}][ext=mp4]+ba[ext=m4a]"
+            f"/bv*[height<={h}]+ba/b[height<={h}][ext=mp4]/b")
+
+
+def quality(qs=None):
+    q = ((qs or {}).get("q") or [""])[0]
+    return q if q in QUALITIES else core.CONFIG.get("video_quality") or "1080"
+
+
+SAVE_FMT = save_fmt("720")
 
 
 def test_file():
@@ -171,7 +193,7 @@ def info(sid):
 
 
 # --------------------------------------------------------------------------- watching
-def serve(h, sid):
+def serve(h, sid, q=None):
     row = song_row(sid)
     sv = sidecar(row["path"])
     if os.path.exists(sv):
@@ -181,7 +203,7 @@ def serve(h, sid):
     page = page_for(row, search=is_mix(row))
     if not page:
         raise LookupError("No video for this mix")
-    return proxy(h, page, STREAM_FMT, "video/mp4")
+    return proxy(h, page, vfmt(q or quality()), "video/mp4")
 
 
 def proxy(h, page, fmt, ctype=None):
@@ -241,7 +263,7 @@ def run_save(path, page):
                 if d.get("status") == "downloading" and tot:
                     st["progress"] = int((d.get("downloaded_bytes") or 0) * 100 / tot)
             stem = os.path.join(tmp_dir, "v")
-            with core._ydl({"skip_download": False, "format": SAVE_FMT, "merge_output_format": "mp4",
+            with core._ydl({"skip_download": False, "format": save_fmt(quality()), "merge_output_format": "mp4",
                             "outtmpl": stem + ".%(ext)s", "progress_hooks": [hook], "overwrites": True}) as y:
                 y.extract_info(page, download=True)
             got = next((os.path.join(tmp_dir, f) for f in os.listdir(tmp_dir) if f.startswith("v.") and f.endswith(".mp4")), "")
@@ -340,7 +362,7 @@ def remove(sid):
 
 
 # --------------------------------------------------------------------------- web
-def handle_get(h, path):
+def handle_get(h, path, qs=None):
     """Called from do_GET with the handler, since the video is streamed, not JSON. -> True when handled."""
     if path == "/api/video/all":
         return h.send_json(all_view()) or True
@@ -349,7 +371,7 @@ def handle_get(h, path):
         return None
     if m.group(2):
         return h.send_json(info(m.group(1))) or True
-    serve(h, m.group(1))
+    serve(h, m.group(1), quality(qs))
     return True
 
 
