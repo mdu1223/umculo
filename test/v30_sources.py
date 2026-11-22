@@ -23,7 +23,7 @@ cases = {"4..LebtoniQ, Sef Pico & NtoMusica - Banomona": ("LebtoniQ, Sef Pico & 
 for text, want in cases.items():
     check(g["split_song"](text) == want, f"tracklist line {text!r} -> {g['split_song'](text)}")
 # a published tracklist: songs only, not the channel's membership perks or links
-for pat in (r"(STAMP = .*?\n)", r"(JUNK = re.compile\(.*?\)\n)", r"(def parse_tracklist.*?\n\n\n)", r"(def listen_order.*?\n\n\n)"):
+for pat in (r"(STAMP = .*?\n)", r"(JUNK = re.compile\(.*?\)\n)", r"(def parse_tracklist.*?\n\n\n)", r"(def first_pass.*?\n\n\n)", r"(def refine.*?\n\n\n)"):
     exec(re.search(pat, src, re.S).group(1), g)
 g["strip_html"] = lambda t: t; g["secs"] = lambda t: sum(int(x) * 60 ** i for i, x in enumerate(reversed(t.split(":"))))
 desc = """Deep and Soulful House Mix 19
@@ -44,8 +44,12 @@ num = g["parse_tracklist"]("""Tracklist:
 check([x["artist"] for x in num] == ["Daev Martian & Deniece Marz", "China Chameleon x Brandon Dhludhlu", "Ta-Ice & Myazisto", "Sio"], f"numbered tracklist {[x['artist'] for x in num]}")
 one = g["parse_tracklist"]("3 Doors Down - Kryptonite\n50 Cent - In Da Club")
 check([x["artist"] for x in one] == ["3 Doors Down", "50 Cent"], f"names that start with a number stay {[x['artist'] for x in one]}")
-order = g["listen_order"](4415, 60)
-check(len(order) == len(set(order)) == len(range(30, 4403, 60)) and order[1] - order[0] == 180, f"listening covers the whole mix first {order[:4]}")
+class _Core: song_key = staticmethod(lambda a, t: (a.lower(), t.lower()))
+g["core"] = _Core
+fp = g["first_pass"](3600, 60)
+check(len(fp) == 20 and fp[0] == 30 and fp[1] - fp[0] == 180, f"the first pass covers an hour in 20 bits {fp[:3]} {len(fp)}")
+res = {30: ("A", "One"), 210: ("A", "One"), 390: ("B", "Two"), 570: None, 750: ("C", "Three")}
+check(g["refine"](res, 60) == [300, 480, 660], f"listen again only where the song changes {g['refine'](res, 60)}")
 # the inbox
 M = os.path.join(S, "data", "Music"); inbox = os.path.join(M, "_inbox"); os.makedirs(inbox, exist_ok=True)
 def mp3(path, artist, title):

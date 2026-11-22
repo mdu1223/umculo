@@ -4190,9 +4190,7 @@ function renderSettings() {
       <div class="set-row"><span>ListenBrainz username (optional)</span><input class="field" id="set-lb_user" value="${esc(s.lb_user || "")}" style="width:150px"></div>
       <label class="opt"><input type="checkbox" id="set-auto_find" ${s.auto_find ? "checked" : ""}> Find the songs in every new episode of your subscriptions</label>
       <label class="opt"><input type="checkbox" id="set-auto_get" ${s.auto_get ? "checked" : ""}> Get each song from your sources as soon as it's heard (mixes you download or ask to find)</label>
-      <div class="set-row"><span>Song finder speed<br><span class="muted" style="font-size:12px">Bits of the mix listened to at once. If Shazam pushes back, Umculo slows down by itself.</span></span>
-        <span><select class="field" id="set-finder_listeners">${[[4, "Steady (4)"], [8, "Fast (8)"], [12, "Faster (12)"], [16, "Fastest (16)"]].map(([v, l]) =>
-          `<option value="${v}" ${+s.finder_listeners === v ? "selected" : ""}>${l}</option>`).join("")}${[4, 8, 12, 16].includes(+s.finder_listeners) ? "" : `<option selected value="${s.finder_listeners}">${s.finder_listeners}</option>`}</select></span></div>
+      <div class="muted" style="font-size:12px;margin:6px 4px 0">The song finder goes as fast as Shazam allows: the whole mix in the first few seconds, then only where the songs change.</div>
       <label class="opt"><input type="checkbox" id="set-lyrics_auto" ${s.lyrics_auto ? "checked" : ""}> Add lyrics to new downloads</label>
     </div>
     <h2>Notifications</h2>
@@ -4489,7 +4487,7 @@ async function saveSettings() {
     slsk_stall_s: v("slsk_stall_s") * 60, stream_after_s: v("stream_after_s") * 60, retry_days: v("retry_days"),
     sub_hours: v("sub_hours"), ntfy: $("#set-ntfy").value.trim(),
     weekly_mode: document.querySelector('input[name=weekly_mode]:checked')?.value, weekly_size: v("weekly_size"),
-    lb_user: $("#set-lb_user").value.trim(), auto_find: $("#set-auto_find").checked, auto_get: $("#set-auto_get")?.checked, finder_listeners: +($("#set-finder_listeners")?.value || 8), lyrics_auto: $("#set-lyrics_auto").checked,
+    lb_user: $("#set-lb_user").value.trim(), auto_find: $("#set-auto_find").checked, auto_get: $("#set-auto_get")?.checked, lyrics_auto: $("#set-lyrics_auto").checked,
     best_effort: $("#set-best_effort").checked,
     stream_quality: document.querySelector('input[name=stream_quality]:checked')?.value, stream_wait_s: v("stream_wait_s"),
     internet_kbps: $("#set-internet_kbps")?.value};

@@ -68,7 +68,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.3.1"
+VERSION = "3.3.2"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2824,6 +2824,7 @@ def main():
     inbox.init(sys.modules[__name__])
     mixfeed.init(sys.modules[__name__])
     load_jobs()
+    links.after_jobs()
     threading.Thread(target=scan_loop, daemon=True).start()
     threading.Thread(target=retry_loop, daemon=True).start()
     if not CONFIG["password"]:

@@ -35,7 +35,7 @@ CFG = {
     "test_shazam": E("UMCULO_TEST_SHAZAM", ""),
     "auto_find": E("AUTO_FIND_SONGS", "1") == "1",
     "auto_get": E("AUTO_GET_SONGS", "1") == "1",             # get each song from your sources the moment it's heard
-    "listeners": max(1, min(16, int(E("FINDER_LISTENERS", "8")))),   # bits of a mix listened to at once
+    "listeners": max(1, min(16, int(E("FINDER_LISTENERS", "4")))),   # lookups at once (Shazam sets the real pace)
 }
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/130.0 Safari/537.36")
@@ -576,20 +576,39 @@ def recognizer():
     except ImportError:
         return None
     loop = asyncio.new_event_loop()
-    shz = loop.run_until_complete(_make_shazam(Shazam))
+    client = None
+    try:                                             # no silent retries when Shazam says "too many": we pace ourselves
+        from shazamio.client import HTTPClient
+        from aiohttp_retry import ExponentialRetry
+        client = HTTPClient(retry_options=ExponentialRetry(attempts=2, statuses={500, 502, 503, 504}))
+        shz = loop.run_until_complete(_make_shazam(Shazam, http_client=client))
+    except (ImportError, TypeError):
+        client = None
+        shz = loop.run_until_complete(_make_shazam(Shazam))
 
     def rec(wav, _off):
-        res = loop.run_until_complete(shz.recognize(wav, max_skew=0.01))
+        try:
+            res = loop.run_until_complete(asyncio.wait_for(shz.recognize(wav, max_skew=0.01), 25))
+        except Exception as ex:  # noqa: BLE001
+            if "ratelimit" in type(ex).__name__.lower() or "429" in str(ex):
+                raise Throttled() from ex
+            raise
         tr = res.get("track") or {}
         if tr.get("title") and tr.get("subtitle"):
             return tr["subtitle"], tr["title"]
         return None
-    rec.close = lambda: (loop.run_until_complete(shz.close()), loop.close())
+
+    def close():
+        loop.run_until_complete(shz.close())
+        if client is not None:
+            loop.run_until_complete(client.close())
+        loop.close()
+    rec.close = close
     return rec
 
 
-async def _make_shazam(cls):
-    return cls()
+async def _make_shazam(cls, **kw):
+    return cls(**kw)
 
 
 def segment(path, offset, headers=None, tmpdir=None):
@@ -890,11 +909,56 @@ def get_states(f):
     return out
 
 
-def listen_order(dur, step):
-    """Every sample spot, the whole mix first (one every few minutes), then the gaps: songs show up all through it early."""
-    offs = list(range(min(30, max(dur - 12, 0)), max(dur - 12, 1), step))
-    first = offs[::3]
-    return first + [o for o in offs if o not in set(first)]
+def first_pass(dur, step):
+    """One bit every 3 minutes across the whole mix: about 20 for an hour, which Shazam answers at once."""
+    return list(range(min(30, max(dur - 12, 0)), max(dur - 12, 1), max(step * 3, 120)))
+
+
+def refine(res, step):
+    """Listen between two bits only where something changes (another song, or nothing heard): a song that
+    plays through both doesn't need the bit in between."""
+    offs, out = sorted(res), []
+    for a, b in zip(offs, offs[1:]):
+        if b - a < step * 1.5:
+            continue
+        ra, rb = res[a], res[b]
+        if ra and rb and core.song_key(*ra) == core.song_key(*rb):
+            continue
+        out.append((a + b) // 2)
+    return out
+
+
+class Throttled(Exception):
+    pass
+
+
+class Pacer:
+    """Shazam limits each server (a burst of about 20, then a few a minute). Every song finder waits its turn here,
+    instead of the library's silent minute-long retries."""
+
+    def __init__(self):
+        self.lock, self.until, self.strikes = threading.Lock(), 0.0, 0
+
+    def wait(self, f=None):
+        while True:
+            with self.lock:
+                w = self.until - time.time()
+            if w <= 0 or (f and f.get("cancel")):
+                return
+            time.sleep(min(w, 2))
+
+    def limited(self):
+        with self.lock:
+            self.strikes += 1
+            self.until = max(self.until, time.time() + min(20, 4 * self.strikes))
+
+    def ok(self):
+        with self.lock:
+            self.strikes = 0
+
+
+PACER = Pacer()
+SHAZAM_SLOTS = threading.BoundedSemaphore(4)
 
 
 def run_find(f):
@@ -937,11 +1001,22 @@ def run_find(f):
         if rec0 and dur:
             if hasattr(rec0, "close"):
                 rec0.close()
-            offsets = listen_order(dur, max(CFG["finder_step"], 15))
-            local = threading.local()
-            made, lock, state = [], threading.Lock(), {"n": 0, "fails": 0, "empty": 0, "secs": 0.0, "stop": False}
+            step = max(CFG["finder_step"], 15)
+            res, local = {}, threading.local()
+            made, lock = [], threading.Lock()
+            state = {"n": 0, "fails": 0, "empty": 0, "secs": 0.0, "stop": False, "limited": 0, "round": 0}
             tmpdir = os.path.join(core.CONFIG["staging"], req["id"])
             os.makedirs(tmpdir, exist_ok=True)
+            first = first_pass(dur, step)
+            cap = max(len(first), int(dur // step) + 5)
+
+            def say(hit_now=False):
+                n, waiting = state["n"], PACER.until > time.time()
+                pc = int(n * 70 / max(len(first), 1)) if state["round"] == 0 else min(97, 70 + state["round"] * 10)
+                fset(f, state="listening", progress=min(pc, 97),
+                     message=f"Listening: {n} bits of the mix so far · {len(heard)} heard"
+                     + (" · Shazam asked us to slow down for a moment" if waiting else ""),
+                     **({"tracks": merge_tracks(listed, list(heard))} if hit_now else {}))
 
             def one(off):
                 if f.get("cancel") or state["stop"]:
@@ -960,57 +1035,52 @@ def run_find(f):
                         wav = segment(f["local"], off)
                 hit = None
                 if wav:
-                    try:
-                        hit = local.rec(wav, off)
-                        with lock:
-                            state["fails"] = 0
-                    except Exception as ex:  # noqa: BLE001
-                        log("recognition failed at", off, ":", ex)
-                        with lock:
-                            state["fails"] += 1
-                            fails = state["fails"]
-                            if fails >= 15:
-                                state["stop"] = f"Audio recognition stopped working ({type(ex).__name__}); showing what was found"
-                        time.sleep(min(30, 2 ** min(fails, 5)))      # Shazam asked us to slow down: back off, then carry on
+                    for _attempt in range(60):           # Shazam allows a burst, then a few a minute: wait our turn
+                        if f.get("cancel"):
+                            return
+                        PACER.wait(f)
                         try:
-                            hit = local.rec(wav, off)
-                        except Exception:  # noqa: BLE001
-                            hit = None
+                            with SHAZAM_SLOTS:
+                                hit = local.rec(wav, off)
+                            PACER.ok()
+                            with lock:
+                                state["fails"] = 0
+                            break
+                        except Throttled:
+                            PACER.limited()
+                            with lock:
+                                state["limited"] += 1
+                            say()
+                        except Exception as ex:  # noqa: BLE001
+                            log("recognition failed at", off, ":", ex)
+                            with lock:
+                                state["fails"] += 1
+                                if state["fails"] >= 8:
+                                    state["stop"] = f"Audio recognition stopped working ({type(ex).__name__}); showing what was found"
+                            break
                 with lock:
+                    res[off] = (hit[0], hit[1]) if hit else None
                     state["n"] += 1
                     state["secs"] += time.time() - t0
                     if hit:
                         heard.append({"t": off, "artist": hit[0], "title": hit[1]})
                         heard.sort(key=lambda x: x["t"])
-                        new_hit = {"t": off, "artist": hit[0], "title": hit[1]}
                     elif wav:
                         state["empty"] += 1
-                    n = state["n"]
-                    fset(f, state="listening", progress=int(n * 100 / len(offsets)),
-                         message=f"Listening: {n} of {len(offsets)} samples · {len(heard)} heard so far",
-                         **({"tracks": merge_tracks(listed, list(heard))} if hit else {}))
+                    say(bool(hit))
                 if hit and f.get("get"):
-                    want_songs(f, [new_hit])                 # off to your sources straight away
-                if not CFG["test_shazam"]:
-                    time.sleep(CFG["finder_pause"])
+                    want_songs(f, [{"t": off, "artist": hit[0], "title": hit[1]}])   # off to your sources straight away
 
             if listed and f.get("get"):
                 want_songs(f, listed)
-            fset(f, state="listening", progress=0, message=f"Listening: 0 of {len(offsets)} samples")
+            say()
             try:
-                todo = list(offsets)
-
-                def worker():
-                    while not f.get("cancel") and not state["stop"]:
-                        with lock:
-                            if not todo:
-                                return
-                            here = f.get("local") and os.path.exists(f["local"])
-                            off = todo.pop(0) if here or not src.startswith("http") else todo.pop(todo.index(min(todo)))
-                        one(off)
-                with cf.ThreadPoolExecutor(max_workers=CFG["listeners"]) as pool:
-                    for _ in range(CFG["listeners"]):
-                        pool.submit(worker)
+                batch = first                            # the whole mix first, then only where the songs change
+                with cf.ThreadPoolExecutor(max_workers=max(1, min(CFG["listeners"], 4))) as pool:
+                    while batch and not f.get("cancel") and not state["stop"] and len(res) < cap:
+                        list(pool.map(one, batch[:cap - len(res)]))
+                        state["round"] += 1
+                        batch = [o for o in refine(res, step) if o not in res]
             finally:
                 for r in made:
                     try:
@@ -1018,8 +1088,9 @@ def run_find(f):
                     except Exception:  # noqa: BLE001
                         pass
             rec_error = state["stop"] or ""
-            log(f"song finder: {f['title']}: {len(heard)} heard in {state['n']} samples ({state['empty']} not recognised), "
-                f"{state['secs'] / max(state['n'], 1):.1f} s a sample, {CFG['listeners']} at a time")
+            log(f"song finder: {f['title']}: {len(heard)} heard in {state['n']} bits ({state['empty']} not recognised, "
+                f"{len(first)} in the first pass), {state['secs'] / max(state['n'], 1):.1f} s a bit, "
+                f"Shazam asked us to wait {state['limited']} times")
             if state["n"] >= 10 and not heard and not rec_error:
                 rec_error = "Shazam didn't recognise any of this mix (often unreleased edits or very long blends)"
         rec = None
@@ -1252,18 +1323,20 @@ def init(umculo):
     for f in core._load_json("finder.json", []):
         if f["state"] not in ("done", "failed"):
             f["state"], f["message"] = "queued", "Resumed after restart"
-            FIND_POOL.submit(run_find, f)
         FINDS[f["id"]] = f
     threading.Thread(target=sub_loop, daemon=True).start()
+
+
+def after_jobs():
+    """Called once the download queue is loaded: pick up unfinished song finders, and repair old songs."""
+    for f in list(FINDS.values()):
+        if f["state"] == "queued" and f.get("message") == "Resumed after restart":
+            FIND_POOL.submit(run_find, f)
     threading.Thread(target=_repair, daemon=True).start()
 
 
 def _repair():
-    """Once the download queue is up: fix songs queued from numbered tracklists before 3.3.1."""
-    for _ in range(120):
-        if core.BATCH is not None and core.JOBS is not None:
-            break
-        time.sleep(1)
+    """Fix songs queued from numbered tracklists before 3.3.1."""
     for f in list(FINDS.values()):
         ts = f.get("tracks") or []
         if sum(1 for t in ts if re.match(r"^\d{1,3}\s+\S", t.get("artist", ""))) >= 3:
@@ -1273,6 +1346,11 @@ def _repair():
         job = core.JOBS.get(f.get("get_job") or "")
         if job:
             try:
+                job["fast"] = True
+                for t in job["tracks"]:              # put off only because Soulseek was quiet: go now (3.3.1)
+                    if t.get("state") == "not_found" and t.get("silent_retry") and not re.match(r"^\d{1,3}\s+\S", t.get("artist", "")):
+                        t.update(state="pending", message="Trying again", silent_retry=False, retry_at=0)
+                        core.BATCH.submit(core.process_track, job, t)
                 n = unnumber(job)
                 if n:
                     log(f"song finder: took the list numbers off {core.plural(n, 'song')} in {f['title']}; trying them again")
