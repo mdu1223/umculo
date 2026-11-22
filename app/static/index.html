@@ -24,6 +24,8 @@
         --lossless:#3ecf8e; --high:#6aa5ff; --ok:#e3b341; --low:#ff6b5e; --unknown:#9aa1ad;}
 }
 *{box-sizing:border-box}
+:root{color-scheme:light}
+@media (prefers-color-scheme: dark){:root{color-scheme:dark}}
 html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 button{font:inherit;color:inherit;cursor:pointer}
 header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 16px 10px;border-bottom:1px solid var(--line)}
@@ -587,7 +589,7 @@ nav.tabs button{font-size:11px}
   background:rgba(0,0,0,.6);color:#fff;font-size:12px;font-weight:800;cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 .vid-bar button:hover{background:rgba(0,0,0,.8)}
 .vid-fs{display:none}
-.vq-menu{position:absolute;right:8px;bottom:48px;z-index:3;min-width:190px;padding:6px;border-radius:14px;background:rgba(20,22,28,.96);color:#fff;
+.vq-menu{position:fixed;z-index:60;min-width:200px;padding:6px;border-radius:14px;background:#14161c;color:#fff;border:1px solid rgba(255,255,255,.08);
   box-shadow:0 12px 34px rgba(0,0,0,.5);text-align:left;animation:pop .16s ease}
 .vq-menu .vq-h{font-size:12px;font-weight:800;opacity:.7;padding:6px 10px}
 .vq-menu button{display:block;width:100%;text-align:left;border:0;background:none;color:#fff;padding:9px 10px;border-radius:9px;font-size:14px;font-weight:600}
@@ -595,7 +597,8 @@ nav.tabs button{font-size:11px}
 .qrow.auto{position:relative}.qrow.auto .meta .t::before{content:"Autoplay · ";color:var(--accent);font-weight:800}
 .shelf-wrap{position:relative}.sh-arr{display:none}
 @media (min-width:1000px){
-  .shelf.mx-shelf{scrollbar-width:none}.shelf.mx-shelf::-webkit-scrollbar{display:none}
+  .shelf{scrollbar-width:none}.shelf::-webkit-scrollbar{display:none}
+  #side-lib{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
   .sh-arr{display:grid;place-items:center;position:absolute;top:calc((300px * 9 / 16) / 2 - 20px);z-index:2;width:40px;height:40px;border-radius:50%;border:0;cursor:pointer;
     background:var(--panel);color:var(--ink);box-shadow:0 6px 20px rgba(0,0,0,.35);opacity:0;transition:opacity .2s}
   .sh-arr.l{left:-14px}.sh-arr.r{right:-14px}
@@ -1172,7 +1175,7 @@ async function loadRequests() {
       <div class="t">${esc(t.title)}</div>
       <div class="s">${esc(t.artist)} · <span class="q ${c.tier}">${esc(c.quality)}</span> from ${SRC[c.source]}${q.who && me?.user?.is_admin ? ` · for ${esc(q.who)}` : ""}</div>
       ${active ? `<div class="bar"><i style="width:${Math.max(3, q.progress||0)}%"></i></div>` : ""}
-      <div class="state ${q.state}">${q.state === "ready" ? "✓ " : ""}${esc(q.message)}</div>
+      <div class="state ${q.state}">${q.state === "ready" ? "✓ " : ""}${esc(niceMsg(q.message))}</div>
       ${q.warning ? `<div class="warn">${esc(q.warning)}</div>` : ""}
       ${q.state === "ready" && q.file ? `<div class="s" style="margin-top:4px">${esc(q.file.replace(/^.*?\/Music\//, ""))}</div>` : ""}
     </div></div>`;
@@ -1539,7 +1542,7 @@ function renderLink() {
       <div class="chips"><button class="btn small" onclick="linkImport()">Get all as a playlist</button>
       <button class="btn small ghost" onclick="linkGetAll()">Download all as-is</button></div></div>` : ""}
     <label class="opt"><input type="checkbox" id="find-keep"> When finding songs, also keep the mix itself</label>
-    ${s.podcast ? "" : `<label class="opt"><input type="checkbox" id="link-video" ${store.get("umc_vidsave", false) ? "checked" : ""} onchange="store.set('umc_vidsave', this.checked)"> Also save the video <span class="muted">(mixes; up to 720p, about 1 GB an hour)</span></label>`}
+    ${s.podcast ? "" : `<label class="opt"><input type="checkbox" id="link-video" ${store.get("umc_vidsave", false) ? "checked" : ""} onchange="store.set('umc_vidsave', this.checked)"> Also save the video <span class="muted">(mixes; ${vidSaveText().toLowerCase()})</span></label>`}
     ${focus ? `<h2>${s.kind === "single" ? "This upload" : "The episode you linked"}</h2><div class="box">${epRow(focus)}</div>` : ""}
     ${rest.length ? `<h2>${focus ? "More" : s.podcast ? "Episodes" : "Uploads"}</h2><div class="box">${rest.slice(0, 60).map(epRow).join("")}</div>` : ""}`);
 }
@@ -1599,6 +1602,7 @@ async function loadMixFeed() {
   }
   MIXLATER = r.later || [];
   const hero = (r.shelves.find(x => x.id === "shows") || r.shelves[0]).items[0];
+  if (hero) r.shelves.forEach(sh => sh.items = sh.items.filter(x => x.id !== hero.id));
   el.innerHTML = heroHTML(hero) + contHTML() + (MIXLATER.length ? `<div class="mx-row"><div class="mx-rowh"><b>Saved for later</b><span class="muted">Mixes you kept for another time</span></div>
       <div class="shelf-wrap"><div class="shelf mx-shelf">${MIXLATER.map(mixCard).join("")}</div></div></div>` : "") +
     `<div class="mx-head"><h2>Mixes for you</h2><button class="btn small ghost" onclick="mixRefresh(this)">${r.building ? `<span class="spin"></span>Updating` : "Refresh"}</button></div>` +
@@ -1608,6 +1612,18 @@ async function loadMixFeed() {
       <button class="sh-arr r" onclick="shelfGo(this, 1)" aria-label="More">${icon("next", 18)}</button></div></div>`).join("");
   if (r.building) mixFeedT = setTimeout(loadMixFeed, 5000);
 }
+function armShelves() {                      // arrows on every row (on a computer), like the mixes have
+  if (!desk()) return;
+  document.querySelectorAll(".shelf").forEach(sh => {
+    if (sh.parentNode.classList.contains("shelf-wrap")) return;
+    const w = document.createElement("div"); w.className = "shelf-wrap gen"; sh.before(w); w.appendChild(sh);
+    w.insertAdjacentHTML("afterbegin", `<button class="sh-arr l" onclick="shelfGo(this, -1)" aria-label="Back">${icon("prev", 18)}</button>`);
+    w.insertAdjacentHTML("beforeend", `<button class="sh-arr r" onclick="shelfGo(this, 1)" aria-label="More">${icon("next", 18)}</button>`);
+    w.addEventListener("mouseenter", () => { const im = sh.querySelector("img, .art, .ph"); const h = im ? im.offsetHeight : 120;
+      w.querySelectorAll(".sh-arr").forEach(a => a.style.top = Math.max(10, h / 2 - 20) + "px"); });
+  });
+}
+let armT = 0; new MutationObserver(() => { cancelAnimationFrame(armT); armT = requestAnimationFrame(armShelves); }).observe(document.body, {childList: true, subtree: true});
 function shelfGo(btn, dir) { const sh = btn.parentNode.querySelector(".shelf"); sh.scrollBy({left: dir * sh.clientWidth * 0.85, behavior: "smooth"}); }
 const warmed = new Set();
 function mixWarm(id) {                         // get the stream ready while you're deciding, so Play starts at once
@@ -1655,11 +1671,11 @@ async function openDJ(idOrName, url) {
   const m = MIXES[idOrName], name = m ? m.channel : idOrName, u = m ? m.channel_url : url || "";
   closeSheet(); if ($("#view-mixes").hidden) show("mixes");
   const el = $("#mx-dj"); el.hidden = false; $("#mx-feed").hidden = $("#mx-finds").hidden = $("#mx-subs").hidden = $("#mx-results").hidden = true;
-  el.innerHTML = `<button class="btn small ghost dj-back" onclick="closeDJ()">${icon("prev", 16)} Mixes</button><div class="dj-head"><div class="dj-t">${esc(name)}</div></div><div class="mx-grid">${mixSkeleton(8)}</div>`;
+  el.innerHTML = `<button class="btn small ghost dj-back" onclick="closeDJ()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg> Mixes</button><div class="dj-head"><div class="dj-t">${esc(name)}</div></div><div class="mx-grid">${mixSkeleton(8)}</div>`;
   window.scrollTo({top: 0});
   let r; try { r = await api(`/api/mixdj?name=${encodeURIComponent(name)}&url=${encodeURIComponent(u)}`); } catch (e) { el.innerHTML += `<div class="empty">${esc(e.message)}</div>`; return; }
   djCur = r; const total = r.items.reduce((a, x) => a + x.duration, 0);
-  el.innerHTML = `<button class="btn small ghost dj-back" onclick="closeDJ()">${icon("prev", 16)} Mixes</button>
+  el.innerHTML = `<button class="btn small ghost dj-back" onclick="closeDJ()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg> Mixes</button>
     <div class="dj-head" style="--img:url('${esc(r.thumb)}')"><div class="dj-bg"></div>
       <div class="dj-in"><div class="dj-av">${r.thumb ? `<img src="${esc(r.thumb)}" alt="">` : ""}</div>
         <div><div class="dj-k">DJ / show</div><div class="dj-t">${esc(r.name)}</div>
@@ -1738,7 +1754,7 @@ function mixOpts(id) {
     <span class="switch"><input type="checkbox" id="mxo-${k}" ${on ? "checked" : ""}><span></span></span></label>`;
   el.innerHTML = `${m.channel_url ? sw("sub", `Subscribe to ${esc(m.channel)}`, "New mixes from this channel download by themselves", store.get("umc_mx_sub", false)) : ""}
     ${sw("find", "Find the songs", "Umculo listens and lists every song, with its time", store.get("umc_mx_find", true))}
-    ${sw("video", "Save the video", "Up to 720p, about 1 GB an hour. You can watch it while it plays either way", store.get("umc_vidsave", false))}
+    ${sw("video", "Save the video", vidSaveText() + ". You can watch it while it plays either way", store.get("umc_vidsave", false))}
     <button class="btn" style="width:100%;margin-top:10px" onclick="mixGet('${id}', this)">${icon("dl", 18)} Download and play</button>
     <div class="muted" style="font-size:12px;margin-top:6px;text-align:center">It starts playing right away while the audio downloads.</div>`;
   el.hidden = false; el.scrollIntoView({behavior: "smooth", block: "nearest"});
@@ -2416,6 +2432,14 @@ const CAN = (() => {                         // what this browser plays as-is: t
     flac: "audio/flac", opus: 'audio/ogg; codecs="opus"', ogg: 'audio/ogg; codecs="vorbis"', wav: "audio/wav"};
   try { return Object.keys(t).filter(k => a.canPlayType(t[k])).join(","); } catch (e) { return "mp3"; }
 })();
+function niceMsg(m) {                          // download errors from the sources, in plain words
+  m = String(m || ""); let x;
+  if ((x = m.match(/Premieres in ([^.\n]+)/i))) return `Not out yet: it premieres in ${x[1]}. Try again after that`;
+  if (/live event will begin|is upcoming/i.test(m)) return "Not out yet: it's a live stream that hasn't started. Try again after it airs";
+  if (/Sign in to confirm|not a bot/i.test(m)) return "YouTube asked for a bot check. Try again in a few minutes";
+  if (/Private video|Video unavailable|has been removed|HTTP Error 404/i.test(m)) return "It isn't there any more (removed, private or moved)";
+  return m.replace(/^ERROR:\s*(\[[^\]]+\]\s*)?([\w-]{6,}:\s*)?/, "");
+}
 function srcFor(it) {                         // the stream key lets AirPlay, Chromecast and the DJ's songs in a shared room play
   const k = it._k || streamKey;
   if (it.mix_url) return `/api/mixstream?u=${encodeURIComponent(it.mix_url)}`;      // a mix from the internet, playing while it downloads
@@ -2674,7 +2698,7 @@ function artHTML(it, cls = "") {
 const qStoreKey = () => "umc_q_" + (me?.user?.id || "open");
 function saveQueue() {                       // the queue and where you were, so a reload (or iOS closing the page) picks up again
   if (!pq.length) return store.set(qStoreKey(), null);
-  const keep = ["nd_id", "deezer_id", "title", "artist", "album", "cover", "cover_big", "duration", "album_id", "artist_id", "owned"];
+  const keep = ["nd_id", "deezer_id", "mix_url", "_find", "_mix", "title", "artist", "album", "cover", "cover_big", "duration", "album_id", "artist_id", "owned"];
   const lo = Math.max(0, pi - 20);
   store.set(qStoreKey(), {q: pq.slice(lo, pi + 200).map(x => Object.fromEntries(keep.filter(k => x[k] !== undefined).map(k => [k, x[k]]))), i: pi - lo, t: $("#player").currentTime || 0, src: nowSrc});
 }
@@ -2683,6 +2707,7 @@ function restoreQueue() {
   pq = s.q; pi = Math.min(s.i, pq.length - 1); nowSrc = s.src || null; const it = pq[pi]; if (!it) return;
   const p = $("#player"); p.preload = "none"; p.src = srcFor(it); bindPlayer(it, s.t || 0);
   $("#mini").classList.add("on"); miniFor(it); $("#mini-s").textContent = it.artist + " · tap play to carry on"; setPP(true);
+  renderMiniDesk(); if (window.miniSeekTick) miniSeekTick(p);
 }
 function miniFor(it) {
   const a = $("#mini-art"); const c = it.cover || it.cover_big;
@@ -2825,7 +2850,8 @@ function renderMiniDesk() {
   $("#mini-vol").addEventListener("input", e => setVol(e.target.value / 100));
   window.miniSeekTick = p => { if (drag || !desk()) return; const pc = p.duration ? p.currentTime / p.duration : 0;
     sk.value = Math.round(pc * 1000); sk.style.setProperty("--v", pc * 100 + "%");
-    $("#mini-cur").textContent = mmss(p.currentTime || 0) || "0:00"; $("#mini-dur").textContent = p.duration && isFinite(p.duration) ? mmss(p.duration) : "–:––"; };
+    $("#mini-cur").textContent = mmss(p.currentTime || 0) || "0:00"; const d = p.duration && isFinite(p.duration) ? p.duration : pq[pi]?.duration; $("#mini-dur").textContent = d ? mmss(d) : "–:––";
+    if (!p.duration && d && p.currentTime > 0) { const pc2 = p.currentTime / d; sk.value = Math.round(pc2 * 1000); sk.style.setProperty("--v", pc2 * 100 + "%"); } };
 })();
 function tintFrom(it) {                       // a soft background from the cover's colour
   const c = it.cover_big || it.cover, set = col => { const pn = npHost(); if (pn && npOpen()) pn.style.setProperty("--tint", col); };
@@ -3122,16 +3148,25 @@ function vidSync() {
 }
 /* video quality: the picture is fetched on its own (the sound comes from the audio player), so it can be sharp */
 const VQ = [["", "Auto"], ["480", "480p"], ["720", "720p"], ["1080", "1080p HD"], ["1440", "1440p"], ["best", "Best (up to 4K)"]];
+function vidSaveText() {
+  const q = String((typeof settings !== "undefined" && settings && settings.video_quality) || store.get("umc_vqsave", "1080"));
+  const gb = {"480": "0.4", "720": "0.9", "1080": "1.5", "1440": "3"}[q];
+  return q === "best" ? "Best quality there is; the most space" : `Up to ${q}p, about ${gb} GB an hour`;
+}
 const vqParam = () => vidQ ? `q=${vidQ}` : "";
 function vqLabel() {
   const h = vidEl.videoHeight; const now = h ? (h >= 2000 ? "4K" : h >= 1300 ? "1440p" : h >= 1000 ? "1080p" : h >= 700 ? "720p" : h + "p") : "";
   return `${icon("full", 13)}<span>${now || (VQ.find(x => x[0] === vidQ) || VQ[0])[1].split(" ")[0]}</span>`;
 }
 function vqMenu() {
-  const m = $("#vq-menu"); if (!m) return;
+  let m = $("#vq-menu"); if (!m) return;
+  if (m.parentNode !== document.body) { document.querySelectorAll("body > #vq-menu").forEach(x => x.remove()); document.body.appendChild(m); }
   if (!m.hidden) { m.hidden = true; return; }
   m.innerHTML = `<div class="vq-h">Video quality</div>` + VQ.map(([v, l]) => `<button class="${vidQ === v ? "on" : ""}" onclick="event.stopPropagation(); setVQ('${v}')">${l}${v === "" ? ` <span class="muted">(your setting)</span>` : ""}</button>`).join("");
   m.hidden = false;
+  const b = document.querySelector(".vid-qb")?.getBoundingClientRect(), mh = m.offsetHeight, mw = m.offsetWidth;
+  if (b) { m.style.left = Math.max(8, Math.min(innerWidth - mw - 8, b.right - mw)) + "px";
+    m.style.top = (b.top - mh - 8 >= 8 ? b.top - mh - 8 : Math.min(innerHeight - mh - 8, b.bottom + 8)) + "px"; }
   setTimeout(() => document.addEventListener("click", function off(e) { if (!e.target.closest("#vq-menu")) { m.hidden = true; document.removeEventListener("click", off); } }), 0);
 }
 function setVQ(v) {
@@ -3827,7 +3862,7 @@ async function vidAllShow(started) {
   }
 }
 async function vidAllStart(btn) {
-  if (!confirm("Save the video (up to 720p, about 1 GB an hour) of every mix that doesn't have one? It runs on your server, one at a time.")) return;
+  if (!confirm(`Save the video (${vidSaveText().toLowerCase()}) of every mix that doesn't have one? It runs on your server, one at a time.`)) return;
   await busy(btn, async () => { const r = await api("/api/video/all", {method: "POST", body: "{}"});
     toast(r.added ? `Saving ${plural(r.added, "video")}, one at a time` : "Every mix already has its video"); });
   vidAllShow();
@@ -4086,10 +4121,10 @@ const SRCS = ["soulseek","usenet","hearthis","soundcloud","youtube"];
 let settings = null;
 async function openSettings() {
   openSheet(`<div class="grab"></div><div class="empty"><span class="spin"></span></div>`);
-  try { settings = await api("/api/settings"); renderSettings(); } catch (e) { setPanel(`<div class="empty">${esc(e.message)}</div>`); }
+  try { settings = await api("/api/settings"); store.set("umc_vqsave", String(settings.video_quality || "1080")); renderSettings(); } catch (e) { setPanel(`<div class="empty">${esc(e.message)}</div>`); }
 }
 async function saveVideoQuality(v, btn) {
-  try { await api("/api/settings", {method: "POST", body: JSON.stringify({video_quality: v})}); settings.video_quality = v;
+  try { await api("/api/settings", {method: "POST", body: JSON.stringify({video_quality: v})}); settings.video_quality = v; store.set("umc_vqsave", v);
     btn.parentNode.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn)); toast(`Mix videos: ${v === "best" ? "best quality" : v + "p"}`); }
   catch (e) { toast(e.message); }
 }

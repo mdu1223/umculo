@@ -149,6 +149,11 @@ def hearthis_search(q, n=20):
     return out
 
 
+def feed_name(t):
+    """A YouTube channel feed is titled "DJ - Videos"; people call it "DJ"."""
+    return re.sub(r"\s*[-\u2013|]\s*(Videos|Uploads|Home|Shorts|Live|Streams|Podcasts?)\s*$", "", t or "", flags=re.I).strip() or (t or "")
+
+
 # --------------------------------------------------------------------------- the shelves
 def build(user_id, u):
     t = taste(u)
@@ -182,7 +187,7 @@ def build(user_id, u):
     back = []
     for s in t["subs"][:4]:                          # older uploads of shows you follow that you don't have
         if s.get("url") and "youtube.com" in s["url"]:
-            back += keep(safe(yt_channel, s["url"]), f"From {s['title']}", limit=6)
+            back += keep(safe(yt_channel, s["url"]), f"From {feed_name(s['title'])}", limit=6)
     if back:
         shelves.append({"id": "shows", "title": "More from your shows", "sub": "Mixes from channels you follow that you don't have yet", "items": back})
     names = []

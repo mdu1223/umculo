@@ -38,5 +38,24 @@ const { chromium } = require('playwright');
   await p.evaluate(() => show('mixes')); await p.waitForTimeout(2500);
   if (!await p.$('.mx-rowh b:has-text("Pick up where you left off")')) probs.push('no continue shelf');
   await p.evaluate(() => document.querySelector('.mx-rowh')?.scrollIntoView()); await shot('continue');
+  // every row on a computer gets arrows, not a scrollbar
+  await p.evaluate(() => { show('search'); renderSearchHome(); }); await p.waitForTimeout(2000);
+  const bare = await p.evaluate(() => [...document.querySelectorAll('.shelf')].filter(s => s.offsetParent && !s.parentNode.classList.contains('shelf-wrap')).length);
+  if (bare) probs.push(bare + ' rows without arrows');
+  // a mix playing from the internet still plays after a reload
+  await p.evaluate(() => { saveQueue(); }); await p.reload(); await p.waitForTimeout(3000);
+  const rs = await p.evaluate(() => ({src: $('#player').src, dur: $('#mini-dur').textContent, shuf: $('#mini-shuf').innerHTML.length}));
+  if (!rs.src.includes('/api/mixstream')) probs.push('mix lost after a reload: ' + rs.src);
+  if (rs.dur === '0:00' || rs.dur === '–:––') probs.push('no length on the player bar after a reload: ' + rs.dur);
+  if (!rs.shuf) probs.push('no shuffle button after a reload');
+  // the video quality menu stays on screen and isn't cut off by the small video
+  await p.evaluate(() => { pq[pi].mix_url = pq[pi].mix_url.replace('#half', ''); openPlayer(); }); await p.waitForTimeout(1500);
+  await p.evaluate(() => { vidInfo[qid(pq[pi])] = {available: true, stream: true}; videoOn = true; renderPlayer(); }); await p.waitForTimeout(800);
+  if (await p.$('.vid-qb')) {
+    await p.click('.vid-qb'); await p.waitForTimeout(400);
+    const box = await p.evaluate(() => { const r = $('#vq-menu').getBoundingClientRect(); return {t: r.top, b: r.bottom, l: r.left, r: r.right, h: r.height, n: $('#vq-menu').querySelectorAll('button').length}; });
+    if (box.t < 0 || box.b > 900 || box.l < 0 || box.r > 1440 || box.n < 5) probs.push('quality menu off screen or cut ' + JSON.stringify(box));
+    await shot('quality-menu');
+  } else probs.push('no quality button on the mix video');
   console.log(probs.length ? 'UI MIXES2 PROBLEMS\n' + probs.join('\n') : 'UI MIXES2 OK'); await b.close();
 })();

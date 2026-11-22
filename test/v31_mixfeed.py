@@ -83,5 +83,10 @@ dj = web("/api/mixdj?name=DysFonik")
 check(dj.get("name") == "DysFonik" and dj.get("items") and all(m["duration"] >= 1200 for m in dj["items"]), f"a DJ page with their sets {dj.get('count')}")
 check(any(m.get("have") for m in dj["items"]) or True, "sets you have are marked")
 check(web("/api/mixdj").get("_code") == 400, "a DJ page needs a name")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app"))
+import importlib.util
+spec = importlib.util.spec_from_file_location("mf", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "mixfeed.py")); mf = importlib.util.module_from_spec(spec); spec.loader.exec_module(mf)
+for t, want in (("DysFonik - Videos", "DysFonik"), ("Noxious DJ (Official) - Videos", "Noxious DJ (Official)"), ("Le Good Life", "Le Good Life"), ("Live", "Live")):
+    check(mf.feed_name(t) == want, f"show name {t!r} -> {mf.feed_name(t)!r}")
 print(f"V31 OK {n}" if not bad else f"V31 FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)
