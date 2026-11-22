@@ -78,6 +78,18 @@ check(any(j.get("name") == "Deep Sessions 042" for j in jl), f"a playlist for th
 check(web("/api/settings").get("finder_listeners") == 4 and web("/api/settings").get("auto_get") is True, "song finder speed and auto-get in settings")
 web("/api/settings", "POST", {"finder_listeners": 12}); check(web("/api/settings").get("finder_listeners") == 12, "song finder speed can be changed")
 web("/api/settings", "POST", {"finder_listeners": 4})
+# newest first, with release dates; old sets only when there aren't enough new ones
+fd = web("/api/mixfeed")
+for sh in fd.get("shelves", []):
+    ds = [m.get("date") or 0 for m in sh["items"]]
+    check(ds == sorted(ds, reverse=True), f"shelf {sh['title']} newest first {ds}")
+check(all(m.get("date") for sh in fd.get("shelves", []) for m in sh["items"]), "every mix has a release date")
+old_ok = all(sum(1 for m in sh["items"] if m["id"] != "yt:old999") < 4 or not any(m["id"] == "yt:old999" for m in sh["items"])
+             for sh in fd.get("shelves", []))
+check(old_ok, "a 3-year-old mix only shows on a shelf with fewer than 4 newer ones")
+sr = web("/api/mixsearch?q=" + urllib.parse.quote("deep house"))
+ds = [m.get("date") or 0 for m in sr.get("items", [])]
+check(ds and ds == sorted(ds, reverse=True), f"search results newest first {ds}")
 check(web("/api/chapters/find/aaaaaaaaaaaa").get("_code") == 404, "unknown song finder: not found")
 c, body = raw("/api/mixstream?u=" + urllib.parse.quote(feedurl))
 check(c == 200 and len(body) > 1000, f"a mix streams while it downloads ({c})")

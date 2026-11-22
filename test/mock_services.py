@@ -11,7 +11,7 @@ ROOT = sys.argv[2]                      # fake /data root
 PORT = int(sys.argv[1])
 SLSKD_DL = os.path.join(ROOT, "Music", "Soulseek")
 SAB_DONE = os.path.join(ROOT, "downloads", "complete")
-STATE = {"transfers": {}, "sab_polls": 0, "scans": 0}
+STATE = {"transfers": {}, "sab_polls": 0, "scans": 0, "slsk": "Connected, LoggedIn", "slsk_puts": 0}
 
 
 def make_audio(path, codec_args, seconds=225):
@@ -180,11 +180,18 @@ class H(BaseHTTPRequestHandler):
 
     def do_DELETE(self):  # noqa: N802
         print("DELETE", self.path, flush=True)
+        if self.path == "/api/v0/server":
+            STATE["slsk"] = "Disconnected"
         self.j({})
 
     def do_PUT(self):  # noqa: N802
         n = int(self.headers.get("Content-Length") or 0)
         d = json.loads(self.rfile.read(n) or b"{}")
+        if self.path == "/api/v0/server":                 # slskd: connect to Soulseek
+            STATE["slsk_puts"] += 1
+            if STATE["slsk"] != "Disconnecting":          # stuck halfway: has to be told to disconnect first
+                STATE["slsk"] = "Connected, LoggedIn"
+            return self.j({})
         m = re.match(r"^/api/user/([^/]+)/library$", self.path)
         if m:
             ND["access"][m.group(1)] = d["libraryIds"]
@@ -197,6 +204,13 @@ class H(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
         p = u.path
+        if p == "/api/v0/server":
+            return self.j({"state": STATE["slsk"], "username": "tester"})
+        if p == "/test/slsk-stuck":
+            STATE["slsk"] = "Disconnecting"
+            return self.j({"ok": True})
+        if p == "/test/slsk-state":
+            return self.j({"state": STATE["slsk"], "puts": STATE["slsk_puts"]})
         # ---- Deezer
         if p == "/search":
             qq = q.get("q", [""])[0].lower()

@@ -13,6 +13,9 @@ const { chromium } = require('playwright');
   if (!await p.$('#side-lib .side-pl')) probs.push('no playlists in the sidebar');
   await p.evaluate(() => show('mixes')); await p.waitForSelector('.mx-hero', {timeout: 20000}).catch(() => probs.push('no hero'));
   await shot('mixes-hero');
+  const empty = await p.evaluate(() => [...document.querySelectorAll('#mx-feed .mx-row')].filter(r => !r.querySelector('.mxc')).map(r => r.querySelector('b')?.textContent));
+  if (empty.length) probs.push('empty rows: ' + empty.join(', '));
+  if (!await p.$('.mxc-s span, .mx-hero-s')) probs.push('no release dates on the cards');
   // save for later from the hero
   await p.click('.mx-hero-acts .btn:has-text("Save")'); await p.waitForTimeout(1500);
   if (!await p.$('.mx-rowh b:has-text("Saved for later")')) probs.push('saved for later shelf missing');

@@ -18,6 +18,7 @@ GET  /api/mixvideo?u=<page>       -> its video, streamed
 
 a mix: {"id", "url", "title", "channel", "channel_url", "duration", "views", "thumb", "source", "why"}
 """
+import calendar
 import json
 import os
 import re
@@ -108,12 +109,30 @@ def fake(q):
     return [yt_item(e) for e in items if not words or words & set(norm(e["title"] + " " + e.get("channel", "")).split())]
 
 
-def yt_search(q, n=14):
+def yt_search(q, n=14, newest=True):
+    """YouTube's best matches, and (newest=True) its newest uploads for the same search, together."""
     if os.environ.get("UMCULO_TEST_MIXES"):
         return fake(q)
-    with core._ydl({"extract_flat": True}) as y:
-        info = y.extract_info(f"ytsearch{n}:{q}", download=False) or {}
-    return [yt_item(e) for e in info.get("entries") or [] if e and e.get("id")]
+
+    def run(kind):
+        with core._ydl({"extract_flat": True}) as y:
+            info = y.extract_info(f"{kind}{n}:{q}", download=False) or {}
+        return [yt_item(e) for e in info.get("entries") or [] if e and e.get("id")]
+    if not newest:
+        return run("ytsearch")
+    import concurrent.futures as cf
+    with cf.ThreadPoolExecutor(max_workers=2) as pool:
+        best, new = pool.submit(run, "ytsearch"), pool.submit(run, "ytsearchdate")
+        out, seen = [], set()
+        for fut in (new, best):
+            try:
+                for m in fut.result():
+                    if m["id"] not in seen:
+                        seen.add(m["id"])
+                        out.append(m)
+            except Exception as ex:  # noqa: BLE001
+                core.log("mix search:", ex)
+    return out
 
 
 def yt_channel(url, n=30):
@@ -125,13 +144,28 @@ def yt_channel(url, n=30):
     return [yt_item(e, info.get("uploader") or info.get("channel") or "", url) for e in info.get("entries") or [] if e and e.get("id")]
 
 
+def ts_of(e):
+    """When a mix came out, as a timestamp (0 when nobody said)."""
+    for k in ("release_timestamp", "timestamp"):
+        if e.get(k):
+            return int(e[k])
+    d = str(e.get("upload_date") or e.get("release_date") or "")
+    if re.fullmatch(r"\d{8}", d):
+        return calendar.timegm(time.strptime(d, "%Y%m%d"))
+    d = str(e.get("created_at") or "")                 # Hearthis: "2026-11-01 10:00:00"
+    m = re.match(r"(\d{4})-(\d\d)-(\d\d)", d)
+    if m:
+        return calendar.timegm(time.strptime(m.group(0), "%Y-%m-%d"))
+    return 0
+
+
 def yt_item(e, channel="", channel_url=""):
     vid = e["id"]
     return {"id": "yt:" + vid, "url": e.get("url") if str(e.get("url", "")).startswith("http") else f"https://www.youtube.com/watch?v={vid}",
             "title": e.get("title") or "", "channel": e.get("channel") or e.get("uploader") or channel,
             "channel_url": e.get("channel_url") or e.get("uploader_url") or channel_url,
             "duration": int(e.get("duration") or 0), "views": int(e.get("view_count") or 0),
-            "thumb": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg", "source": "YouTube"}
+            "thumb": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg", "source": "YouTube", "date": ts_of(e)}
 
 
 def hearthis_search(q, n=20):
@@ -145,7 +179,7 @@ def hearthis_search(q, n=20):
         out.append({"id": f"ht:{e.get('id')}", "url": e.get("permalink_url") or "", "title": e.get("title") or "",
                     "channel": user.get("username") or "", "channel_url": user.get("permalink_url") or "",
                     "duration": int(e.get("duration") or 0), "views": int(e.get("playback_count") or 0),
-                    "thumb": e.get("artwork_url_retina") or e.get("artwork_url") or "", "source": "Hearthis.at"})
+                    "thumb": e.get("artwork_url_retina") or e.get("artwork_url") or "", "source": "Hearthis.at", "date": ts_of(e)})
     return out
 
 
@@ -175,7 +209,7 @@ def build(user_id, u):
             seen.add(m["id"])
             seen_t.add(k)
             out.append({**m, "why": why})
-            if len(out) >= limit:
+            if len(out) >= limit * 2:                 # a few spare: the newest ones are kept once the dates are in
                 break
         return out
 
@@ -214,27 +248,68 @@ def build(user_id, u):
     ht = keep(safe(hearthis_search, f"{st} south africa"), "Free on Hearthis.at", limit=10)
     if len(ht) >= 3:
         shelves.append({"id": "hearthis", "title": "On Hearthis.at", "sub": "DJs' own uploads, free to download", "items": ht})
-    fill_details([m for sh in shelves for m in sh["items"] if not m.get("channel")])
-    return shelves
+    fill_details([m for sh in shelves for m in sh["items"]])
+    for sh in shelves:
+        sh["items"] = newest_first(sh["items"])[:14]
+    return [sh for sh in shelves if sh["items"]]
 
 
-def fill_details(items):
-    """Search results sometimes come without the channel and plays: look those few up (in parallel)."""
-    if not items or os.environ.get("UMCULO_TEST_MIXES"):
+DETAILS = {}             # mix id -> {channel, channel_url, views, date}: looked up once, remembered
+MAX_AGE_DAYS = int(os.environ.get("MIX_MAX_AGE_DAYS", "540"))   # older mixes only when there aren't enough new ones
+
+
+def fill_details(items, limit=150):
+    """Search results often come without a release date (and sometimes without the channel and plays):
+    look those up in parallel, and remember them."""
+    want = []
+    for m in items:
+        d = DETAILS.get(m["id"])
+        if d:
+            for k, v in d.items():
+                if v and not m.get(k):
+                    m[k] = v
+        if not m.get("date") or not m.get("channel"):
+            if m["source"] == "YouTube" and not d and m not in want:
+                want.append(m)
+    if not want or os.environ.get("UMCULO_TEST_MIXES"):
         return
 
     def one(m):
         try:
             with core._ydl({}) as y:
                 i = y.extract_info(m["url"], download=False, process=False) or {}
-            m["channel"] = i.get("channel") or i.get("uploader") or m.get("channel") or ""
-            m["channel_url"] = i.get("channel_url") or i.get("uploader_url") or m.get("channel_url") or ""
-            m["views"] = int(i.get("view_count") or m.get("views") or 0)
+            d = {"channel": i.get("channel") or i.get("uploader") or "", "channel_url": i.get("channel_url") or i.get("uploader_url") or "",
+                 "views": int(i.get("view_count") or 0), "date": ts_of(i)}
+            DETAILS[m["id"]] = d
+            for k, v in d.items():
+                if v and not m.get(k):
+                    m[k] = v
         except Exception as ex:  # noqa: BLE001
-            core.log("mixes for you: no details for", m["url"], ex)
+            core.log("mixes: no details for", m["url"], ex)
     import concurrent.futures as cf
-    with cf.ThreadPoolExecutor(max_workers=6) as pool:
-        list(pool.map(one, items[:40]))
+    with cf.ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(one, want[:limit]))
+    for m in items:                                   # the same mix can be on two shelves
+        d = DETAILS.get(m["id"])
+        if d:
+            for k, v in d.items():
+                if v and not m.get(k):
+                    m[k] = v
+    save_details()
+
+
+def save_details():
+    with LOCK:
+        keep = dict(list(DETAILS.items())[-3000:])
+    core._save_json("mix_details.json", keep)
+
+
+def newest_first(items, min_keep=4):
+    """Newest first; mixes older than MIX_MAX_AGE_DAYS go when there are enough newer ones."""
+    items.sort(key=lambda m: -(m.get("date") or 0))
+    cut = time.time() - MAX_AGE_DAYS * 86400
+    recent = [m for m in items if not m.get("date") or m["date"] >= cut]
+    return recent if len(recent) >= min_keep else items
 
 
 def refresh(user_id, u):
@@ -327,6 +402,8 @@ def dj_page(qs):
             continue
         seen.add(m["id"])
         out.append({**m, "have": norm(m["title"]) in t["have"]})
+    fill_details(out, 60)
+    out = newest_first(out, min_keep=8)
     name = name or (out[0]["channel"] if out else "")
     similar = []
     for s in (CACHE.get(uid()) or {}).get("shelves") or []:
@@ -366,8 +443,9 @@ def search(q):
             continue
         seen.add(m["id"])
         found.append({**m, "have": norm(m["title"]) in t["have"]})
-    found.sort(key=lambda m: (m["source"] != "YouTube" and m["views"] < 50, 0))
-    return {"items": found[:40]}
+    found = [m for m in found if not (m["source"] != "YouTube" and m["views"] < 50)]
+    fill_details(found, 50)
+    return {"items": newest_first(found, min_keep=12)[:40]}
 
 
 def hide(b):
@@ -475,4 +553,5 @@ def handle_post(path, b):
 def init(umculo):
     global core
     core = umculo
+    DETAILS.update(core._load_json("mix_details.json", {}) or {})
     load()

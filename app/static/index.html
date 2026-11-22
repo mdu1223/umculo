@@ -216,6 +216,7 @@ header{padding-top:calc(14px + env(safe-area-inset-top))}
 .np-acts button.have{color:var(--lossless);opacity:.9;cursor:default}
 .np-up{text-align:left;margin-top:6px}
 .np-uph{display:flex;align-items:center;justify-content:space-between}
+.mx-new{color:var(--accent);font-weight:700}
 .chap-msg{display:flex;align-items:center;gap:6px;font-size:12px;margin:-4px 4px 6px;line-height:1.35}
 .np-uph .link{border:0;background:none;color:var(--accent);font-weight:700;font-size:13px;margin:16px 4px 6px;cursor:pointer}
 .q-art{width:44px;height:44px;flex:none;border-radius:8px}.q-art .ph{font-size:15px}
@@ -1582,6 +1583,14 @@ async function linkSub() {
 /* ---------- mixes for you: find, play and download DJ mixes without leaving Umculo ---------- */
 const MIXES = {}; let mixFeedT = null;
 const compact = n => { try { return new Intl.NumberFormat(undefined, {notation: "compact", maximumFractionDigits: 1}).format(n); } catch (e) { return String(n); } };
+function released(ts) {                        // "today", "3 days ago", "2 weeks ago", "12 Mar 2025"
+  if (!ts) return "";
+  const d = (Date.now() / 1000 - ts) / 86400;
+  if (d < 1) return "today"; if (d < 2) return "yesterday"; if (d < 7) return `${Math.floor(d)} days ago`;
+  if (d < 31) return `${Math.floor(d / 7)} week${d < 14 ? "" : "s"} ago`;
+  return new Date(ts * 1000).toLocaleDateString(undefined, {day: "numeric", month: "short", year: "numeric"});
+}
+const isNew = ts => ts && Date.now() / 1000 - ts < 7 * 86400;
 function mixCard(m) {
   MIXES[m.id] = m;
   const pos = store.get("umc_pos_m" + m.url, 0), prog = pos > 30 && m.duration ? Math.min(100, pos * 100 / m.duration) : 0;
@@ -1590,7 +1599,7 @@ function mixCard(m) {
       ${m.source !== "YouTube" ? `<span class="mxc-src">${esc(m.source)}</span>` : ""}${m.have ? `<span class="mxc-src have">${icon("check", 12)} Yours</span>` : ""}
       <button class="mxc-play" onclick="event.stopPropagation(); mixPlayNow('${m.id}')" aria-label="Play now" title="Play now">${PP_PLAY.replace(/24/g, "22")}</button>
       ${prog ? `<span class="mxc-prog"><i style="width:${prog}%"></i></span>` : ""}</div>
-    <div class="mxc-t">${esc(m.title)}</div><div class="mxc-s">${m.channel ? `<a href="#" onclick="event.preventDefault(); event.stopPropagation(); openDJ('${m.id}')">${esc(m.channel)}</a>` : ""}${m.views ? ` · ${compact(m.views)} plays` : ""}</div></div>`;
+    <div class="mxc-t">${esc(m.title)}</div><div class="mxc-s">${m.channel ? `<a href="#" onclick="event.preventDefault(); event.stopPropagation(); openDJ('${m.id}')">${esc(m.channel)}</a>` : ""}${m.views ? ` · ${compact(m.views)} plays` : ""}${m.date ? ` · <span class="${isNew(m.date) ? "mx-new" : ""}">${released(m.date)}</span>` : ""}</div></div>`;
 }
 const mixSkeleton = n => Array.from({length: n}, () => `<div class="mxc sk"><div class="mxc-th"></div><div class="mxc-t">&nbsp;</div><div class="mxc-s">&nbsp;</div></div>`).join("");
 async function loadMixFeed() {
@@ -1604,7 +1613,7 @@ async function loadMixFeed() {
   }
   MIXLATER = r.later || [];
   const hero = (r.shelves.find(x => x.id === "shows") || r.shelves[0]).items[0];
-  if (hero) r.shelves.forEach(sh => sh.items = sh.items.filter(x => x.id !== hero.id));
+  if (hero) { r.shelves.forEach(sh => sh.items = sh.items.filter(x => x.id !== hero.id)); r.shelves = r.shelves.filter(sh => sh.items.length); }
   el.innerHTML = heroHTML(hero) + contHTML() + (MIXLATER.length ? `<div class="mx-row"><div class="mx-rowh"><b>Saved for later</b><span class="muted">Mixes you kept for another time</span></div>
       <div class="shelf-wrap"><div class="shelf mx-shelf">${MIXLATER.map(mixCard).join("")}</div></div></div>` : "") +
     `<div class="mx-head"><h2>Mixes for you</h2><button class="btn small ghost" onclick="mixRefresh(this)">${r.building ? `<span class="spin"></span>Updating` : "Refresh"}</button></div>` +
@@ -1640,7 +1649,7 @@ function heroHTML(m) {                        // the big one at the top: the new
     <img src="${esc(big)}" alt="" onerror="if (this.src !== '${esc(m.thumb)}') this.src='${esc(m.thumb)}'">
     <div class="mx-hero-in"><div class="mx-hero-why">${esc(m.why || "For you")}</div>
       <div class="mx-hero-t">${esc(m.title)}</div>
-      <div class="mx-hero-s"><a href="#" onclick="event.preventDefault(); openDJ('${m.id}')">${esc(m.channel || "")}</a> · ${hms(m.duration)}${m.views ? ` · ${compact(m.views)} plays` : ""}</div>
+      <div class="mx-hero-s"><a href="#" onclick="event.preventDefault(); openDJ('${m.id}')">${esc(m.channel || "")}</a> · ${hms(m.duration)}${m.views ? ` · ${compact(m.views)} plays` : ""}${m.date ? ` · ${released(m.date)}` : ""}</div>
       <div class="mx-hero-acts"><button class="btn" onclick="mixPlayNow('${m.id}')">${PP_PLAY.replace(/24/g, "18")} Play</button>
         <button class="btn ghost" onclick="mixSheet('${m.id}', true)">${icon("dl", 18)} Download</button>
         <button class="btn ghost" onclick="mixLater('${m.id}')" title="Save for later">${icon(laterHas(m.id) ? "check" : "queue", 18)} ${laterHas(m.id) ? "Saved" : "Save"}</button></div></div></div>`;
@@ -1738,7 +1747,7 @@ function mixSheet(id, openOpts) {
   openSheet(`<div class="grab"></div><div class="mxs">
     <div class="mxs-hero">${m.thumb ? `<img src="${esc(m.thumb)}" alt="">` : ""}<span class="mxc-dur">${hms(m.duration)}</span></div>
     <div class="mxs-t">${esc(m.title)}</div>
-    <div class="muted">${esc(m.channel || "")} · ${hms(m.duration)}${m.views ? ` · ${compact(m.views)} plays` : ""} · ${esc(m.source)}${m.why ? `<br><span class="mxs-why">${esc(m.why)}</span>` : ""}</div>
+    <div class="muted">${esc(m.channel || "")} · ${hms(m.duration)}${m.views ? ` · ${compact(m.views)} plays` : ""}${m.date ? ` · out ${released(m.date)}` : ""} · ${esc(m.source)}${m.why ? `<br><span class="mxs-why">${esc(m.why)}</span>` : ""}</div>
     <div class="mxs-acts"><button class="btn ghost" onclick="${playingIt ? "closeSheet(); openPlayer()" : `mixPlayNow('${id}')`}">${PP_PLAY.replace(/24/g, "18")} ${playingIt ? "Playing" : "Play now"}</button>
       <button class="btn" onclick="mixOpts('${id}')">${icon("dl", 18)} Download</button></div>
     <div id="mxs-opts" class="mxs-opts" hidden></div>

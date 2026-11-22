@@ -108,5 +108,15 @@ if cands:
         time.sleep(0.5)
     check(state.get("state") in ("ready", "done"), f"downloaded from Hearthis.at {state.get('state')} {state.get('message')}")
     check(any("Banomona" in f and not f.endswith(".txt") for d, _x, fs in os.walk(os.path.join(M, "Umculo")) for f in fs if "LebtoniQ" in d), "and filed in the library")
+# Soulseek: slskd stuck "Disconnecting" -> Umculo tells it to finish disconnecting and reconnect
+MK = f"http://localhost:{int(PORT) + 1000}"
+urllib.request.urlopen(MK + "/test/slsk-stuck").read()
+ok = False
+for _ in range(40):
+    st = json.loads(urllib.request.urlopen(MK + "/test/slsk-state").read())
+    if st["state"].endswith("LoggedIn") and st["puts"]:
+        ok = True; break
+    time.sleep(0.5)
+check(ok, f"a stuck Soulseek connection is reconnected by itself {st}")
 print(f"V30 OK {n}" if not bad else f"V30 FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)

@@ -103,6 +103,8 @@ Most settings live in the app (**Settings**). These are set in `docker-compose.y
 | `WAHA_URL`, `WAHA_KEY`, `WAHA_SESSION` | | WhatsApp messages through WAHA (or set it up in the app) |
 | `FINDER_LISTENERS` | `4` | At most this many song-finder lookups at once (Shazam limits each server to a burst of about 20, then a few a minute; Umculo paces itself) |
 | `AUTO_GET_SONGS` | `1` | Get each song the song finder hears (and you don't have) from your sources straight away |
+| `MIX_MAX_AGE_DAYS` | `540` | Mixes for you: older sets only show when there aren't enough newer ones |
+| `SLSK_OFF_AFTER` | `120` | Seconds slskd may be off Soulseek before Umculo asks it to reconnect |
 | `GIGS_APP_ID` | | Your Bandsintown app ID, for gigs near you (Bandsintown no longer answers without one) |
 | `TZ` | `Africa/Johannesburg` | Time zone for the weekly note (alarms keep the time zone of the phone that set them) |
 | `SUPPORT_GITHUB`, `SUPPORT_KOFI` | project links | Donation links in Settings (blank to hide) |

@@ -75,6 +75,53 @@ def c_navidrome_raw():
         (" · scanning now" if sc.get("scanning") else "")
 
 
+SLSK_WATCH = {"since": 0, "tries": 0, "last": 0, "state": ""}
+WATCH_EVERY = float(os.environ.get("SLSK_WATCH_EVERY", "60"))      # how often to look (s)
+OFF_AFTER = float(os.environ.get("SLSK_OFF_AFTER", "120"))          # off this long: ask it to reconnect (s)
+
+
+def slsk_watch():
+    """slskd sometimes drops off Soulseek and stays there ("Disconnecting" for hours). Every minute: if it's been
+    off for 2 minutes, tell it to reconnect (and, if it's stuck halfway, to finish disconnecting first)."""
+    time.sleep(min(30, WATCH_EVERY))
+    while True:
+        try:
+            if core.CONFIG.get("slskd") and "soulseek" in core.CONFIG.get("sources", []):
+                base, h = core.CONFIG["slskd"], core.slskd_headers()
+                st = core.http("GET", f"{base}/api/v0/server", headers=h, timeout=10, retries=0) or {}
+                state = st.get("state") or ""
+                if "LoggedIn" in state or "Logged In" in state:
+                    if SLSK_WATCH["since"]:
+                        core.log(f"Soulseek: connected again ({SLSK_WATCH['tries']} reconnect tries)")
+                    SLSK_WATCH.update(since=0, tries=0, state=state)
+                else:
+                    now = time.time()
+                    if not SLSK_WATCH["since"]:
+                        SLSK_WATCH["since"] = now
+                        core.log(f"Soulseek: slskd is {state or 'not connected'}")
+                    off = now - SLSK_WATCH["since"]
+                    wait = min(1800, OFF_AFTER * 2 ** min(SLSK_WATCH["tries"], 4))     # 2, 4, 8, 16, then every 30 min
+                    if off > OFF_AFTER and now - SLSK_WATCH["last"] > wait:
+                        SLSK_WATCH["tries"] += 1
+                        SLSK_WATCH["last"] = now
+                        try:
+                            if "Disconnecting" in state or "Connecting" in state:
+                                core.http("DELETE", f"{base}/api/v0/server", headers=h, timeout=15, retries=0)
+                                time.sleep(5)
+                            core.http("PUT", f"{base}/api/v0/server", headers=h, timeout=30, retries=0)
+                            core.log(f"Soulseek: slskd was {state or 'off'} for {int(off / 60)} min; asked it to reconnect")
+                        except Exception as ex:  # noqa: BLE001
+                            core.log(f"Soulseek: couldn't ask slskd to reconnect ({ex}); restart slskd if this keeps up")
+                    SLSK_WATCH["state"] = state
+        except Exception as ex:  # noqa: BLE001
+            if not SLSK_WATCH.get("unreachable"):
+                core.log("Soulseek: can't reach slskd:", ex)
+            SLSK_WATCH["unreachable"] = True
+        else:
+            SLSK_WATCH["unreachable"] = False
+        time.sleep(WATCH_EVERY)
+
+
 def c_soulseek():
     st = core.http("GET", f"{core.CONFIG['slskd']}/api/v0/server", headers=core.slskd_headers(), timeout=10) or {}
     state = st.get("state") or ""
@@ -92,7 +139,10 @@ def c_soulseek():
             except Exception:  # noqa: BLE001
                 user = None
         return "ok", (f"Connected as {user}" if user else "Connected") + extra
-    return "down", f"slskd is {state or 'not connected to Soulseek'}"
+    w = SLSK_WATCH
+    tries = f" · Umculo asked it to reconnect {core.plural(w['tries'], 'time')}" if w["tries"] else ""
+    since = f" for {int((time.time() - w['since']) / 60)} min" if w["since"] else ""
+    return "down", f"slskd is {state or 'not connected to Soulseek'}{since}{tries}"
 
 
 def c_prowlarr():
@@ -291,3 +341,4 @@ def init(umculo):
     global core
     core = umculo
     threading.Thread(target=loop, daemon=True).start()
+    threading.Thread(target=slsk_watch, daemon=True).start()
