@@ -159,7 +159,7 @@ def build(user_id, u):
     t = taste(u)
     p = PREFS.get(user_id) or {}
     hidden, muted = set(p.get("hidden") or []), {c.lower() for c in p.get("muted") or []}
-    seen = set()
+    seen, seen_t = set(), set()
 
     def keep(items, why, need_style=False, limit=12):
         out = []
@@ -170,7 +170,10 @@ def build(user_id, u):
                 continue
             if any(k and (k in h or h in k) for h in t["have"] if len(h) > 12):
                 continue
+            if k and k in seen_t:                     # the same set re-uploaded by another channel
+                continue
             seen.add(m["id"])
+            seen_t.add(k)
             out.append({**m, "why": why})
             if len(out) >= limit:
                 break

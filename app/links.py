@@ -516,7 +516,9 @@ STAMP = re.compile(r"^\s*[\[(]?((?:\d{1,2}:)?\d{1,2}:\d{2})[\])]?\s*[-–—.:)|
 NUM = re.compile(r"^\s*#?\d{1,3}\s*(?:\.+|\)|:)\s*|^\s*#?\d{1,3}\s+[-–—]\s+(?=.+\s[-–—]\s)|^\s*#?0\d\s+(?=\S)")
 # "4.", "4..", "4)", "4:", "#4 - Artist - Title", "04 Artist" (not "3 Doors Down", "50 Cent", "112 - Cupid")
 JUNK = re.compile(r"https?://|www\.|@|\bfollow|\bsubscribe|instagram|facebook|twitter|tiktok|\bbookings?\b|"
-                  r"\bcontact\b|e-?mail", re.I)
+                  r"\bcontact\b|e-?mail|\bbadges?\b|\bperks?\b|\bmembers?(?:hip)?\b|\bjoin (?:this|my|the|our)\b|"
+                  r"\blevel \d\b|\b(?:audio|video|early|exclusive) access\b|\blinks? to\b|\bdownload links?\b|patreon|"
+                  r"buy me a coffee|\bdonat|\bmerch\b|copyright|disclaimer|fair use|\btip jar\b", re.I)
 
 
 def split_song(text):
@@ -583,16 +585,24 @@ async def _make_shazam(cls):
     return cls()
 
 
-def segment(path, offset):
-    """12 seconds of the mix as a small WAV file (a real file: Shazam's reader needs the WAV sizes filled in)."""
-    tmp = f"{path}.{offset}.wav"
+def segment(path, offset, headers=None, tmpdir=None):
+    """12 seconds of the mix as a small WAV file (a real file: Shazam's reader needs the WAV sizes filled in).
+    path is a file, or the mix's stream address (only those 12 seconds are fetched)."""
+    remote = path.startswith("http")
+    tmp = os.path.join(tmpdir or core.CONFIG["staging"], f"seg-{uuid.uuid4().hex[:8]}-{offset}.wav") if remote else f"{path}.{offset}.wav"
+    pre = []
+    if remote:
+        pre = ["-reconnect", "1", "-reconnect_streamed", "1", "-rw_timeout", "20000000"]
+        if headers:
+            pre += ["-headers", "".join(f"{k}: {v}\r\n" for k, v in headers.items())]
     try:
-        p = subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(offset), "-t", "12", "-i", path, "-ac", "1",
+        p = subprocess.run(["ffmpeg", "-v", "error", "-y", *pre, "-ss", str(offset), "-t", "12", "-i", path, "-ac", "1",
                             "-ar", "16000", tmp], capture_output=True, timeout=60)
         if p.returncode != 0:
             return b""
         with open(tmp, "rb") as fh:
-            return fh.read()
+            data = fh.read()
+        return data if len(data) > 4000 else b""       # a header and no sound: nothing to listen to
     finally:
         try:
             os.remove(tmp)
@@ -642,16 +652,46 @@ def start_find(show, e, keep=False, auto=False, owner=None):
 
 
 def fetch_then_find(f):
+    """Download the mix, and listen for its songs at the same time from the stream (no waiting for the download)."""
+    if stream_source(f):
+        f["fetching"] = True
+        fset(f, state="queued", message="Downloading the mix; listening for the songs starts in a moment")
+        FIND_POOL.submit(run_find, f)
     try:
         fetch_mix(f)
     except Exception as ex:  # noqa: BLE001
         if not f.get("cancel"):
             log("mix download failed:", traceback.format_exc())
-            fset(f, state="failed", message=str(ex)[:200])
+            f["fetch_failed"] = str(ex)[:200]
+            if f.get("state") not in ("listening", "done"):
+                fset(f, state="failed", message=str(ex)[:200])
         return
-    if not f.get("cancel"):
+    finally:
+        f["fetching"] = False
+    if not f.get("cancel") and not f.get("listening_started"):
         fset(f, state="queued", message="In your library: waiting to listen for the songs")
         FIND_POOL.submit(run_find, f)
+
+
+def stream_source(f):
+    """The mix's web page, when its audio can be read straight from the internet."""
+    page = (f.get("entry") or {}).get("page") or ""
+    if not page.startswith("http"):
+        return ""
+    return page if not CFG["test_shazam"] or os.environ.get("UMCULO_TEST_STREAMFIND") else ""
+
+
+def _bg_fetch(f):
+    try:
+        fetch_mix(f)
+    except Exception as ex:  # noqa: BLE001
+        log("mix download failed:", ex)
+        f["fetch_failed"] = str(ex)[:200]
+    finally:
+        f["fetching"] = False
+
+
+LISTENERS = int(os.environ.get("FINDER_LISTENERS", "3"))   # samples listened to at once
 
 
 def make_req(f):
@@ -668,7 +708,9 @@ def fetch_mix(f, req=None):
     req = req or make_req(f)
     RUNNING_REQ[f["id"]] = req
     try:
-        fset(f, state="downloading", message="Downloading the mix")
+        busy = lambda: f.get("state") in ("listening", "done")      # the listening has its own news to show
+        if not busy():
+            fset(f, state="downloading", message="Downloading the mix")
         path = dl_link(req)
         final = core.file_into_library(path, req)
         core.request_scan()
@@ -676,7 +718,10 @@ def fetch_mix(f, req=None):
         if e.get("page"):
             core.video.record(final, e["page"], bool(f.get("video")))
         f["local"] = final                           # from here on it's the library's copy: never deleted
-        fset(f, message="In your library")
+        if not busy():
+            fset(f, message="In your library")
+        else:
+            save_finds()
         return final
     finally:
         if own:
@@ -757,48 +802,114 @@ def stop_find(fid):
     return bool(f)
 
 
+def listen_order(dur, step):
+    """Every sample spot, the whole mix first (one every few minutes), then the gaps: songs show up all through it early."""
+    offs = list(range(min(30, max(dur - 12, 0)), max(dur - 12, 1), step))
+    first = offs[::3]
+    return first + [o for o in offs if o not in set(first)]
+
+
 def run_find(f):
     e, show = f["entry"], f["show_data"]
     if f.get("cancel"):
         return
+    f["listening_started"] = True
     req = make_req(f)
     RUNNING_REQ[f["id"]] = req
     path = ""
     rec = None
     try:
         listed = parse_tracklist(e.get("description", ""), e.get("chapters"))
-        fset(f, state="downloading", message="Downloading the mix to listen to it",
+        fset(f, state="downloading", message="Getting the mix ready to listen to",
              tracks=[{**t, "from": "tracklist", "hits": 0} for t in listed])
-        if f.get("keep") and not f.get("local"):    # keeping it (a find from before a restart): into the library first
-            fetch_mix(f, req)
-        path = f["local"] if f.get("local") else dl_link(req)     # a mix in the library: just listen to it
-        dur = core.audio_duration(path) or e.get("duration") or 0
-        rec = recognizer()
-        heard, fails, rec_error = [], 0, ""
-        if rec and dur:
-            offsets = list(range(min(30, max(dur - 12, 0)), max(dur - 12, 1), max(CFG["finder_step"], 15)))
-            for n, off in enumerate(offsets, 1):
-                if f.get("cancel"):
-                    raise Stopped()
-                fset(f, state="listening", progress=int(n * 100 / len(offsets)),
-                     message=f"Listening: {n} of {len(offsets)} samples · {len(heard)} heard so far")
-                wav = segment(path, off)
-                if not wav:
-                    continue
-                try:
-                    hit = rec(wav, off)
-                    fails = 0
-                except Exception as ex:  # noqa: BLE001
-                    log("recognition failed at", off, ":", ex)
-                    hit, fails = None, fails + 1
-                    if fails >= 5:
-                        rec_error = f"Audio recognition stopped working ({type(ex).__name__}); showing what was found"
-                        break
-                if hit:
-                    heard.append({"t": off, "artist": hit[0], "title": hit[1]})
-                    fset(f, tracks=merge_tracks(listed, heard))    # songs show up as they're heard
+        src, hdrs, page = "", None, stream_source(f)
+        if page and f.get("keep") and not f.get("local") and not f.get("fetching"):   # back after a restart: download alongside
+            f["fetching"] = True
+            FETCH_POOL.submit(_bg_fetch, f)
+        if f.get("local"):
+            src = f["local"]
+        elif page:
+            try:                                     # straight from the internet: only the bits listened to are fetched
+                src, hdrs, _ct = core.video.direct(page, core.mixfeed.AUDIO_FMT) if not os.environ.get("UMCULO_TEST_STREAMFIND") \
+                    else (page, None, "")
+            except Exception as ex:  # noqa: BLE001
+                log("song finder: couldn't read the stream, downloading instead:", ex)
+        if not src:
+            if f.get("keep") and not f.get("fetching"):     # keeping it (a find from before a restart): into the library first
+                fetch_mix(f, req)
+            while f.get("fetching") and not f.get("local") and not f.get("cancel"):
+                time.sleep(2)
+            path = f["local"] if f.get("local") else dl_link(req)     # a mix in the library: just listen to it
+            src = path
+        dur = (core.audio_duration(src) if not src.startswith("http") else 0) or e.get("duration") or 0
+        heard, rec_error = [], ""
+        rec0 = recognizer()
+        if rec0 and dur:
+            if hasattr(rec0, "close"):
+                rec0.close()
+            offsets = listen_order(dur, max(CFG["finder_step"], 15))
+            local = threading.local()
+            made, lock, state = [], threading.Lock(), {"n": 0, "fails": 0, "empty": 0, "secs": 0.0, "stop": False}
+            tmpdir = os.path.join(core.CONFIG["staging"], req["id"])
+            os.makedirs(tmpdir, exist_ok=True)
+
+            def one(off):
+                if f.get("cancel") or state["stop"]:
+                    return
+                if not getattr(local, "rec", None):
+                    local.rec = recognizer()
+                    with lock:
+                        made.append(local.rec)
+                t0 = time.time()
+                wav = segment(src, off, hdrs, tmpdir)
+                if not wav and src.startswith("http"):     # the stream wouldn't give this bit: use the download instead
+                    while f.get("fetching") and not f.get("local") and not f.get("cancel"):
+                        time.sleep(2)
+                    if f.get("local"):
+                        wav = segment(f["local"], off)
+                hit = None
+                if wav:
+                    try:
+                        hit = local.rec(wav, off)
+                        with lock:
+                            state["fails"] = 0
+                    except Exception as ex:  # noqa: BLE001
+                        log("recognition failed at", off, ":", ex)
+                        with lock:
+                            state["fails"] += 1
+                            if state["fails"] >= 6:
+                                state["stop"] = f"Audio recognition stopped working ({type(ex).__name__}); showing what was found"
+                with lock:
+                    state["n"] += 1
+                    state["secs"] += time.time() - t0
+                    if hit:
+                        heard.append({"t": off, "artist": hit[0], "title": hit[1]})
+                        heard.sort(key=lambda x: x["t"])
+                    elif wav:
+                        state["empty"] += 1
+                    n = state["n"]
+                    fset(f, state="listening", progress=int(n * 100 / len(offsets)),
+                         message=f"Listening: {n} of {len(offsets)} samples · {len(heard)} heard so far",
+                         **({"tracks": merge_tracks(listed, list(heard))} if hit else {}))
                 if not CFG["test_shazam"]:
                     time.sleep(CFG["finder_pause"])
+
+            fset(f, state="listening", progress=0, message=f"Listening: 0 of {len(offsets)} samples")
+            try:
+                with cf.ThreadPoolExecutor(max_workers=max(1, LISTENERS)) as pool:
+                    list(pool.map(one, offsets))
+            finally:
+                for r in made:
+                    try:
+                        r.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+            rec_error = state["stop"] or ""
+            log(f"song finder: {f['title']}: {len(heard)} heard in {state['n']} samples ({state['empty']} not recognised), "
+                f"{state['secs'] / max(state['n'], 1):.1f} s a sample, {LISTENERS} at a time")
+            if state["n"] >= 10 and not heard and not rec_error:
+                rec_error = "Shazam didn't recognise any of this mix (often unreleased edits or very long blends)"
+        rec = None
         if f.get("cancel"):
             raise Stopped()
         tracks = merge_tracks(listed, heard)

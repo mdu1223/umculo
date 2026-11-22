@@ -22,6 +22,22 @@ cases = {"4..LebtoniQ, Sef Pico & NtoMusica - Banomona": ("LebtoniQ, Sef Pico & 
          "10) Culoe De Song - Y.O.U": ("Culoe De Song", "Y.O.U"), "2Point1 - Tribe": ("2Point1", "Tribe")}
 for text, want in cases.items():
     check(g["split_song"](text) == want, f"tracklist line {text!r} -> {g['split_song'](text)}")
+# a published tracklist: songs only, not the channel's membership perks or links
+for pat in (r"(STAMP = .*?\n)", r"(JUNK = re.compile\(.*?\)\n)", r"(def parse_tracklist.*?\n\n\n)", r"(def listen_order.*?\n\n\n)"):
+    exec(re.search(pat, src, re.S).group(1), g)
+g["strip_html"] = lambda t: t; g["secs"] = lambda t: sum(int(x) * 60 ** i for i, x in enumerate(reversed(t.split(":"))))
+desc = """Deep and Soulful House Mix 19
+DSG Level 1 - Get loyalty badges next to your name in comments and live chat
+DSG Level 2 - Audio access (Links to download the mixes)
+DSG Level 3 - Video access (Links to download the videos)
+Join this channel to get access to perks
+00:00 Black Coffee - Drive
+05:10 Culoe De Song - Y.O.U
+11:02 Atmos Blaq - Love Song"""
+got = g["parse_tracklist"](desc)
+check([x["title"] for x in got] == ["Drive", "Y.O.U", "Love Song"], f"tracklist without membership perks: {[x['title'] for x in got]}")
+order = g["listen_order"](4415, 60)
+check(len(order) == len(set(order)) == len(range(30, 4403, 60)) and order[1] - order[0] == 180, f"listening covers the whole mix first {order[:4]}")
 # the inbox
 M = os.path.join(S, "data", "Music"); inbox = os.path.join(M, "_inbox"); os.makedirs(inbox, exist_ok=True)
 def mp3(path, artist, title):

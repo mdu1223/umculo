@@ -13,6 +13,7 @@ import os
 import threading
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 
 core = None
@@ -21,6 +22,7 @@ CACHE = {}                 # artist (lower) -> (fetched at, events)
 STATE = {"checked": {}}    # user id -> last check
 API = os.environ.get("GIGS_API", "https://rest.bandsintown.com")
 APP_ID = os.environ.get("GIGS_APP_ID", "umculo")
+REFUSED = {"at": 0, "why": ""}   # Bandsintown said no to our app ID: don't ask for every artist, say why instead
 
 
 def km(a, b, c, d):
@@ -35,10 +37,21 @@ def events(artist):
     hit = CACHE.get(k)
     if hit and time.time() - hit[0] < 20 * 3600:
         return hit[1]
+    if REFUSED["at"] and time.time() - REFUSED["at"] < 6 * 3600:
+        return []
     url = f"{API}/artists/{urllib.parse.quote(artist, safe='')}/events?app_id={APP_ID}&date=upcoming"
     try:
         with urllib.request.urlopen(urllib.request.Request(url, headers={"Accept": "application/json"}), timeout=15) as r:
             data = json.loads(r.read() or b"[]")
+    except urllib.error.HTTPError as ex:
+        if ex.code in (401, 403):
+            if not REFUSED["at"]:
+                core.log(f"gigs: Bandsintown refused the app ID ({ex.code}); set GIGS_APP_ID to one Bandsintown gave you")
+            REFUSED.update(at=time.time(), why="Bandsintown isn't answering Umculo's requests (it now wants its own app ID). "
+                           "Set GIGS_APP_ID to a key from Bandsintown to turn gigs back on.")
+            return []
+        core.log("gigs: couldn't check", artist, ex)
+        data = []
     except Exception as ex:  # noqa: BLE001
         core.log("gigs: couldn't check", artist, ex)
         data = []
@@ -148,7 +161,9 @@ def handle_get(path, _qs):
     where = {k: p.get(k) for k in ("city", "country", "lat", "lon", "radius")}
     if not (p.get("country") or p.get("city") or p.get("lat") is not None):
         return {"gigs": [], "where": where, "needs_place": True}
-    return {"gigs": check(i, message=False), "where": where, "checked": STATE["checked"].get(i)}
+    gigs = check(i, message=False)
+    return {"gigs": gigs, "where": where, "checked": STATE["checked"].get(i),
+            "error": REFUSED["why"] if REFUSED["at"] and not gigs else ""}
 
 
 def handle_post(path, _b):

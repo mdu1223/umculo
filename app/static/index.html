@@ -1888,6 +1888,7 @@ async function loadGigs() {
       const d = new Date(g.date), day = isNaN(d) ? g.date : d.toLocaleDateString(undefined, {weekday: "short", day: "numeric", month: "short"});
       return `<a class="gig" href="${esc(g.tickets || g.url)}" target="_blank" rel="noopener"><div class="gig-d">${esc(day)}</div><b>${esc(g.artist)}</b>
         <span>${esc(g.venue)}</span><span>${esc(g.city)}${g.km ? ` · ${g.km} km` : ""}</span><em>${g.tickets ? "Tickets" : "Details"} ›</em></a>`; }).join("")}</div>`
+    : r.error ? `<div class="muted" style="margin:0 4px">${esc(r.error)}</div>`
     : `<div class="muted" style="margin:0 4px">No shows near ${esc(where)} right now from the artists you follow or play most. You'll get a message when one is announced.</div>`);
 }
 async function loadForYou() {
