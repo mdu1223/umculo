@@ -22,4 +22,5 @@ TEST_SHAZAM=1 run player 8105 python3 test/v27_player.py 8105
 run together 8106 python3 test/v28_together.py 8106
 GIGS_API=http://127.0.0.1:11107 run life 8107 python3 test/v29_life.py 8107
 INBOX_EVERY=2 run sources 8108 python3 test/v30_sources.py 8108
+TEST_SHAZAM=1 TEST_MIXES=$PWD/test/mixes_fixture.json run mixfeed 8110 python3 test/v31_mixfeed.py 8110
 exit $FAIL

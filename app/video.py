@@ -137,24 +137,26 @@ def page_for(row, search=True):
     return page
 
 
-def direct(page):
-    """-> (url, headers) of one progressive mp4 for this page, cached for a while (the links expire)."""
+def direct(page, fmt=STREAM_FMT):
+    """-> (url, headers, content type) of one progressive file for this page, cached for a while (the links expire)."""
     now = time.time()
+    key = (page, fmt)
     with LOCK:
-        c = URLS.get(page)
+        c = URLS.get(key)
     if c and c[2] > now:
-        return c[0], c[1]
-    with core._ydl({"format": STREAM_FMT}) as y:
+        return c[0], c[1], c[3]
+    with core._ydl({"format": fmt}) as y:
         info = y.extract_info(page, download=False) or {}
-    url = info.get("url")
+    url, ext = info.get("url"), info.get("ext") or ""
     if not url and info.get("requested_formats"):
-        url = info["requested_formats"][0].get("url")
+        url, ext = info["requested_formats"][0].get("url"), info["requested_formats"][0].get("ext") or ext
     if not url:
-        raise LookupError("No video for this mix")
+        raise LookupError("Nothing to play for this mix")
     hdrs = {k: v for k, v in (info.get("http_headers") or {}).items() if k.lower() in ("user-agent", "referer", "cookie")}
+    ctype = {"m4a": "audio/mp4", "mp4": "video/mp4", "mp3": "audio/mpeg", "webm": "audio/webm", "opus": "audio/ogg"}.get(ext, "")
     with LOCK:
-        URLS[page] = (url, hdrs, now + 25 * 60)
-    return url, hdrs
+        URLS[key] = (url, hdrs, now + 25 * 60, ctype)
+    return url, hdrs, ctype
 
 
 def info(sid):
@@ -179,8 +181,15 @@ def serve(h, sid):
     page = page_for(row, search=is_mix(row))
     if not page:
         raise LookupError("No video for this mix")
+    return proxy(h, page, STREAM_FMT, "video/mp4")
+
+
+def proxy(h, page, fmt, ctype=None):
+    """Pass one progressive file from the page's site through Umculo, with seeking (Range)."""
+    if test_file():
+        return core.subsonic.serve_file(h, test_file(), ctype or "audio/mp4")
     for attempt in (0, 1):
-        url, hdrs = direct(page)
+        url, hdrs, ct = direct(page, fmt)
         rq = urllib.request.Request(url, headers={**hdrs, **({"Range": h.headers["Range"]} if h.headers.get("Range") else {})})
         try:
             up = urllib.request.urlopen(rq, timeout=30)
@@ -188,14 +197,15 @@ def serve(h, sid):
         except urllib.error.HTTPError as e:
             if e.code in (403, 404, 410) and attempt == 0:     # the link expired: get a fresh one
                 with LOCK:
-                    URLS.pop(page, None)
+                    URLS.pop((page, fmt), None)
                 continue
             raise
     with up:
         h.send_response(up.status)
-        for k in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"):
+        for k in ("Content-Length", "Content-Range", "Accept-Ranges"):
             if up.headers.get(k):
-                h.send_header(k, up.headers[k] if k != "Content-Type" else "video/mp4")
+                h.send_header(k, up.headers[k])
+        h.send_header("Content-Type", ctype or ct or up.headers.get("Content-Type") or "audio/mp4")
         h.send_header("Cache-Control", "no-store")
         h.end_headers()
         while True:

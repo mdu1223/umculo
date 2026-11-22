@@ -60,6 +60,7 @@ import notify as notify_people  # noqa: E402
 import gigs  # noqa: E402
 import alarms  # noqa: E402
 import inbox  # noqa: E402
+import mixfeed  # noqa: E402
 import security  # noqa: E402
 import jellyfin  # noqa: E402
 import cook  # noqa: E402
@@ -67,7 +68,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "2.9.7"
+VERSION = "2.10.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2476,6 +2477,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
             if u.path.startswith("/api/video/") and builtin() and video.handle_get(self, u.path):   # a mix's video
                 return None
+            if u.path.startswith("/api/mix") and mixfeed.handle_get(self, u.path, qs):          # mixes for you, streaming a mix
+                return None
             if u.path.startswith("/api/stream/"):             # full song from the internet, for this page
                 did = u.path.rsplit("/", 1)[-1]
                 t0, cached = time.time(), bool(subsonic.src_path(did))
@@ -2655,7 +2658,7 @@ class Handler(BaseHTTPRequestHandler):
                 tr_set(job, tr, state="downloading", message="Starting your choice")
                 POOL.submit(manual_pick, job, tr, chk["target"], cand)
                 return self.send_json({"ok": True})
-            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0]) or chapters.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or notify_people.handle_post(self.path.split("?")[0], b) or gigs.handle_post(self.path.split("?")[0], b) or alarms.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
+            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0]) or chapters.handle_post(self.path.split("?")[0], b) or mixfeed.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or notify_people.handle_post(self.path.split("?")[0], b) or gigs.handle_post(self.path.split("?")[0], b) or alarms.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
             if out is None:
                 out = listening.handle_post(self.path.split("?")[0], b)
             if out is None:
@@ -2816,6 +2819,7 @@ def main():
     gigs.init(sys.modules[__name__])
     alarms.init(sys.modules[__name__])
     inbox.init(sys.modules[__name__])
+    mixfeed.init(sys.modules[__name__])
     load_jobs()
     threading.Thread(target=scan_loop, daemon=True).start()
     threading.Thread(target=retry_loop, daemon=True).start()

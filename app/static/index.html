@@ -458,6 +458,38 @@ nav.tabs button{font-size:11px}
 .switch span::after{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.2s}
 .switch input:checked+span{background:var(--accent)}.switch input:checked+span::after{transform:translateX(18px)}
 .buy{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:8px 4px 4px;font-size:13px}.buy a{color:var(--accent);font-weight:700;text-decoration:none}
+.mx-search{display:flex;gap:8px;margin:4px 0 12px;position:sticky;top:0;z-index:3;padding:6px 0;background:var(--bg)}.mx-search .field{flex:1;margin:0}
+.mx-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}.mx-head .link{font-size:13px}
+.mx-row{margin:0 0 6px}.mx-rowh{display:flex;flex-direction:column;margin:14px 2px 8px}.mx-rowh b{font-size:17px;letter-spacing:-.01em}.mx-rowh .muted{font-size:12.5px}
+.mx-shelf .mxc{flex:none;width:min(78vw,280px);scroll-snap-align:start}
+.mx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px 12px}
+.mxc{cursor:pointer;min-width:0;outline:none}
+.mxc-th{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:color-mix(in srgb,var(--ink) 8%,transparent)}
+.mxc-th img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s ease}
+.mxc:hover .mxc-th img,.mxc:focus-visible .mxc-th img{transform:scale(1.04)}
+.mxc:focus-visible .mxc-th{box-shadow:0 0 0 3px var(--accent)}
+.mxc-dur{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.78);color:#fff;font-size:11.5px;font-weight:700;padding:2px 6px;border-radius:6px;font-variant-numeric:tabular-nums}
+.mxc-src{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.7);color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;display:inline-flex;gap:4px;align-items:center}
+.mxc-src.have{left:auto;right:6px;background:var(--lossless);color:#04130b}
+.mxc-play{position:absolute;left:8px;bottom:8px;width:40px;height:40px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;cursor:pointer;
+  opacity:0;transform:translateY(6px);transition:.2s;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.mxc:hover .mxc-play,.mxc:focus-within .mxc-play{opacity:1;transform:none}
+@media (hover:none){.mxc-play{opacity:1;transform:none;width:36px;height:36px}}
+.mxc-t{font-weight:700;font-size:14px;line-height:1.3;margin-top:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.mxc-s{font-size:12.5px;color:var(--quiet);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mxc.sk .mxc-th,.mxc.sk .mxc-t,.mxc.sk .mxc-s{background:linear-gradient(90deg,color-mix(in srgb,var(--ink) 6%,transparent),color-mix(in srgb,var(--ink) 12%,transparent),color-mix(in srgb,var(--ink) 6%,transparent));
+  background-size:200% 100%;animation:sk 1.2s linear infinite;border-radius:8px;color:transparent}
+@keyframes sk{to{background-position:-200% 0}}
+.mxs-hero{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;background:#000;margin:4px 0 12px}.mxs-hero img{width:100%;height:100%;object-fit:cover}
+.mxs-t{font-size:19px;font-weight:800;line-height:1.25;letter-spacing:-.01em;margin-bottom:4px}
+.mxs-why{color:var(--accent);font-weight:650}
+.mxs-acts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.mxs-acts .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.mxs-opts{margin-top:12px;padding:6px 14px 14px;border-radius:16px;background:color-mix(in srgb,var(--ink) 6%,transparent);animation:pop .22s ease}
+@keyframes pop{from{opacity:0;transform:translateY(6px) scale(.98)}}
+.mxs-sw{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.mxs-sw>span:first-child{display:flex;flex-direction:column}.mxs-sw .muted{font-size:12px}
+.menu-a{display:flex;gap:10px;align-items:center;padding:12px;color:var(--ink);text-decoration:none;border-radius:10px}.menu-a:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.mx-paste{margin:18px 0 6px}.mx-paste summary{cursor:pointer;color:var(--quiet);font-size:13px;padding:6px 2px}
 .radio-in{display:flex;gap:8px;margin:0 0 10px}.radio-in .field{flex:1;margin:0}
 .rtile{flex:none;width:150px;height:96px;border:0;border-radius:16px;padding:12px;text-align:left;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;cursor:pointer;color:#fff;
   background:linear-gradient(135deg,hsl(var(--h) 65% 42%),hsl(calc(var(--h) + 50) 70% 28%))}
@@ -521,14 +553,20 @@ nav.tabs button{font-size:11px}
     <div id="fy"></div>
   </section>
   <section id="view-mixes" hidden>
-    <h2>Paste a link</h2>
-    <div class="box">
-      <input class="field" id="link-url" type="url" placeholder="SoundCloud, YouTube, Mixcloud, Audiomack, PodOmatic, Apple Podcasts…">
-      <button class="btn" onclick="openLink($('#link-url').value)">Open</button>
-      <div class="muted" style="margin-top:8px">Download a song, mix or episode, find the songs inside a mix, or subscribe so new episodes arrive by themselves.</div>
-    </div>
+    <form class="mx-search" onsubmit="event.preventDefault(); mixSearch(this.q.value)">
+      <input class="field" name="q" id="mx-q" placeholder="Search mixes, DJs and shows, or paste a link" autocomplete="off" enterkeyhint="search">
+      <button class="btn">Search</button>
+    </form>
+    <div id="mx-results"></div>
+    <div id="mx-feed"></div>
     <div id="mx-finds"></div>
     <div id="mx-subs"></div>
+    <details class="mx-paste"><summary>Paste a link to a podcast feed or Apple Podcasts</summary>
+      <div class="box">
+        <input class="field" id="link-url" type="url" placeholder="SoundCloud, YouTube, Mixcloud, PodOmatic, Apple Podcasts, RSS…">
+        <button class="btn" onclick="openLink($('#link-url').value)">Open</button>
+        <div class="muted" style="margin-top:8px">Download a song, mix or episode, find the songs inside a mix, or subscribe so new episodes arrive by themselves.</div>
+      </div></details>
   </section>
 </main>
 
@@ -583,7 +621,7 @@ function show(view) {
   $("#search-form").style.display = view === "search" ? "" : "none";
   if (view === "requests") loadRequests();
   if (view === "playlists") loadPlaylists();
-  if (view === "mixes") loadMixes();
+  if (view === "mixes") { loadMixes(); loadMixFeed(); }
   if (view === "foryou") loadForYou();
   if (view === "library") loadLibrary();
 }
@@ -1308,6 +1346,102 @@ async function linkSub() {
         toast(r.state === "pending" ? "Subscribing — big channels take a moment; it shows under Mixes" : "Subscribed"); loadMixes(); }
   catch (e) { linkShow.subscribed = false; renderLink(); toast(e.message); }
 }
+/* ---------- mixes for you: find, play and download DJ mixes without leaving Umculo ---------- */
+const MIXES = {}; let mixFeedT = null;
+const compact = n => { try { return new Intl.NumberFormat(undefined, {notation: "compact", maximumFractionDigits: 1}).format(n); } catch (e) { return String(n); } };
+function mixCard(m) {
+  MIXES[m.id] = m;
+  return `<div class="mxc" role="button" tabindex="0" onclick="mixSheet('${m.id}')" onkeydown="if(event.key==='Enter')mixSheet('${m.id}')">
+    <div class="mxc-th">${m.thumb ? `<img loading="lazy" src="${esc(m.thumb)}" alt="" onerror="this.remove()">` : ""}<span class="mxc-dur">${hms(m.duration)}</span>
+      ${m.source !== "YouTube" ? `<span class="mxc-src">${esc(m.source)}</span>` : ""}${m.have ? `<span class="mxc-src have">${icon("check", 12)} Yours</span>` : ""}
+      <button class="mxc-play" onclick="event.stopPropagation(); mixPlayNow('${m.id}')" aria-label="Play now" title="Play now">${PP_PLAY.replace(/24/g, "22")}</button></div>
+    <div class="mxc-t">${esc(m.title)}</div><div class="mxc-s">${esc(m.channel || "")}${m.views ? ` · ${compact(m.views)} plays` : ""}</div></div>`;
+}
+const mixSkeleton = n => Array.from({length: n}, () => `<div class="mxc sk"><div class="mxc-th"></div><div class="mxc-t">&nbsp;</div><div class="mxc-s">&nbsp;</div></div>`).join("");
+async function loadMixFeed() {
+  clearTimeout(mixFeedT); const el = $("#mx-feed"); if (!el) return;
+  let r; try { r = await api("/api/mixfeed"); } catch (e) { el.innerHTML = ""; return; }
+  if (!r.shelves.length) {
+    el.innerHTML = r.building ? `<h2>Mixes for you</h2><div class="muted" style="margin:-4px 4px 8px">Picking mixes from the shows, DJs and styles you play…</div><div class="shelf mx-shelf">${mixSkeleton(4)}</div>`
+      : `<h2>Mixes for you</h2><div class="box muted">Download or subscribe to a few mixes and Umculo picks more like them here. Try a search above.</div>`;
+    if (r.building) mixFeedT = setTimeout(loadMixFeed, 4000);
+    return;
+  }
+  el.innerHTML = `<div class="mx-head"><h2>Mixes for you</h2><button class="btn small ghost" onclick="mixRefresh(this)">${r.building ? `<span class="spin"></span>Updating` : "Refresh"}</button></div>` +
+    r.shelves.map(sh => `<div class="mx-row"><div class="mx-rowh"><b>${esc(sh.title)}</b><span class="muted">${esc(sh.sub)}</span></div>
+      <div class="shelf mx-shelf">${sh.items.map(mixCard).join("")}</div></div>`).join("");
+  if (r.building) mixFeedT = setTimeout(loadMixFeed, 5000);
+}
+async function mixRefresh(btn) { btn.innerHTML = `<span class="spin"></span>Updating`; try { await api("/api/mixfeed/refresh", {method: "POST", body: "{}"}); } catch (e) {} setTimeout(loadMixFeed, 1500); }
+async function mixSearch(q) {
+  q = (q || "").trim(); const el = $("#mx-results"); if (!q) { el.innerHTML = ""; return; }
+  if (/^https?:\/\//.test(q)) { el.innerHTML = ""; return openLink(q); }
+  el.innerHTML = `<div class="mx-head"><h2>“${esc(q)}”</h2></div><div class="mx-grid">${mixSkeleton(6)}</div>`;
+  let r; try { r = await api(`/api/mixsearch?q=${encodeURIComponent(q)}`); } catch (e) { el.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  el.innerHTML = `<div class="mx-head"><h2>“${esc(q)}” <span class="count">${r.items.length}</span></h2><button class="btn small ghost" onclick="$('#mx-results').innerHTML=''; $('#mx-q').value=''">Clear</button></div>` +
+    (r.items.length ? `<div class="mx-grid">${r.items.map(mixCard).join("")}</div>` : `<div class="box muted">No sets longer than 20 minutes for that. Try the DJ's name, a show, or a style like “soulful house”.</div>`);
+}
+const mixItem = (m, find) => ({mix_url: m.url, title: m.title, artist: m.channel || m.source, album: m.channel || "", cover: m.thumb, cover_big: m.thumb,
+  duration: m.duration, _find: find || "", _mix: m.id});
+function mixPlayNow(id) {
+  const m = MIXES[id]; if (!m) return;
+  playList([mixItem(m)], 0, {id: "mix:" + m.id, name: m.channel || "Mixes"}); closeSheet(); openPlayer();
+  toast("Playing straight from " + m.source + (m.have ? "" : ": tap Download to keep it"));
+}
+function mixSheet(id, openOpts) {
+  const m = MIXES[id]; if (!m) return;
+  const playingIt = pq[pi]?.mix_url === m.url;
+  openSheet(`<div class="grab"></div><div class="mxs">
+    <div class="mxs-hero">${m.thumb ? `<img src="${esc(m.thumb)}" alt="">` : ""}<span class="mxc-dur">${hms(m.duration)}</span></div>
+    <div class="mxs-t">${esc(m.title)}</div>
+    <div class="muted">${esc(m.channel || "")} · ${hms(m.duration)}${m.views ? ` · ${compact(m.views)} plays` : ""} · ${esc(m.source)}${m.why ? `<br><span class="mxs-why">${esc(m.why)}</span>` : ""}</div>
+    <div class="mxs-acts"><button class="btn ghost" onclick="${playingIt ? "closeSheet(); openPlayer()" : `mixPlayNow('${id}')`}">${PP_PLAY.replace(/24/g, "18")} ${playingIt ? "Playing" : "Play now"}</button>
+      <button class="btn" onclick="mixOpts('${id}')">${icon("dl", 18)} Download</button></div>
+    <div id="mxs-opts" class="mxs-opts" hidden></div>
+    <div class="menu" style="margin-top:10px">
+      <button onclick="mixHide('${id}')">${icon("x", 18)} Not interested</button>
+      ${m.channel ? `<button onclick="mixHide('${id}', true)">${icon("x", 18)} Fewer mixes from ${esc(m.channel)}</button>` : ""}
+      <a class="menu-a" href="${esc(m.url)}" target="_blank" rel="noopener">${icon("link", 18)} Open on ${esc(m.source)}</a></div></div>`);
+  if (openOpts) mixOpts(id);
+}
+function mixOpts(id) {
+  const m = MIXES[id], el = $("#mxs-opts"); if (!m || !el) return;
+  const sw = (k, label, sub, on) => `<label class="mxs-sw"><span><b>${label}</b><span class="muted">${sub}</span></span>
+    <span class="switch"><input type="checkbox" id="mxo-${k}" ${on ? "checked" : ""}><span></span></span></label>`;
+  el.innerHTML = `${m.channel_url ? sw("sub", `Subscribe to ${esc(m.channel)}`, "New mixes from this channel download by themselves", store.get("umc_mx_sub", false)) : ""}
+    ${sw("find", "Find the songs", "Umculo listens and lists every song, with its time", store.get("umc_mx_find", true))}
+    ${sw("video", "Save the video", "Up to 720p, about 1 GB an hour. You can watch it while it plays either way", store.get("umc_vidsave", false))}
+    <button class="btn" style="width:100%;margin-top:10px" onclick="mixGet('${id}', this)">${icon("dl", 18)} Download and play</button>
+    <div class="muted" style="font-size:12px;margin-top:6px;text-align:center">It starts playing right away while the audio downloads.</div>`;
+  el.hidden = false; el.scrollIntoView({behavior: "smooth", block: "nearest"});
+}
+async function mixGet(id, btn) {
+  const m = MIXES[id]; if (!m) return;
+  const sub = !!$("#mxo-sub")?.checked, find = !!$("#mxo-find")?.checked, video = !!$("#mxo-video")?.checked;
+  store.set("umc_mx_sub", sub); store.set("umc_mx_find", find); store.set("umc_vidsave", video);
+  await busy(btn, async () => {
+    const r = await api("/api/mixfeed/get", {method: "POST", body: JSON.stringify({url: m.url, subscribe: sub, find, video})});
+    const cur = pq[pi];
+    if (cur?.mix_url === m.url) { cur._find = r.find || ""; delete chapCache[chapKey(cur)]; }      // already playing: keep going
+    else playList([mixItem(m, r.find)], 0, {id: "mix:" + m.id, name: m.channel || "Mixes"});
+    m.have = true; closeSheet(); openPlayer();
+    toast(`Downloading${find ? ", then finding the songs" : ""}${video ? " (and the video)" : ""}${r.subscribed && sub ? `. Subscribed to ${m.channel}` : ""}. Playing now`);
+    loadMixes();
+  });
+}
+async function mixHide(id, channel) {
+  const m = MIXES[id]; if (!m) return;
+  try { await api("/api/mixfeed/hide", {method: "POST", body: JSON.stringify(channel ? {channel: m.channel} : {id})}); } catch (e) {}
+  closeSheet(); toast(channel ? `Fewer mixes from ${m.channel}` : "Got it: not that one"); loadMixFeed();
+}
+function mixActBtn(it) {
+  const c = it._find && chapCache[chapKey(it)];
+  if (c?.file) return `<button disabled class="have">${icon("check")}<span>In library</span></button>`;
+  if (it._find) return `<button disabled class="have">${icon("dl")}<span>${c && c.state === "downloading" ? "Downloading" : "Saving"}</span></button>`;
+  const m = MIXES[it._mix] || {id: it._mix, url: it.mix_url, title: it.title, channel: it.artist, thumb: it.cover, duration: it.duration, source: ""};
+  MIXES[m.id] = m;
+  return `<button onclick="mixSheet('${m.id}', true)">${icon("dl")}<span>Download</span></button>`;
+}
 async function loadMixes() {
   clearTimeout(mixTimer);
   let r; try { r = await api("/api/mixes"); } catch (e) { $("#mx-subs").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
@@ -1938,7 +2072,7 @@ function playKey(k) { const it = fyItems[k]; const sh = fy.shelves.find(s => s.i
 function playFrom(list, i) { const src = list === "lib" ? lastLibrary : list === "rel" ? relatedList : lastCatalog; playList(src, i); }
 function playList(list, start = 0, src = null) {
   nowSrc = src;
-  pq = list.filter(x => x.deezer_id || x.nd_id);
+  pq = list.filter(x => x.deezer_id || x.nd_id || x.mix_url);
   pi = Math.max(0, pq.indexOf(list[start]));
   playAt();
 }
@@ -1949,6 +2083,7 @@ const CAN = (() => {                         // what this browser plays as-is: t
 })();
 function srcFor(it) {                         // the stream key lets AirPlay, Chromecast and the DJ's songs in a shared room play
   const k = it._k || streamKey;
+  if (it.mix_url) return `/api/mixstream?u=${encodeURIComponent(it.mix_url)}`;      // a mix from the internet, playing while it downloads
   return it.nd_id ? `/api/ndstream/${it.nd_id}?can=${CAN}${k ? "&k=" + k : ""}` : `/api/stream/${it.deezer_id}${k ? "?k=" + k : ""}`;
 }
 /* gapless and crossfade: the next song loads in a second player and takes over the moment this one ends */
@@ -1988,6 +2123,7 @@ let npView = "next", lyrCache = {}, lyrAt = -1, playedFor = null;
 function reportListen() {                    // a play counts after half the song or four minutes, like everywhere else
   const it = playedFor; playedFor = null;
   if (!it || !(it._played > 0)) return;
+  if (it.mix_url) return;
   const body = it.nd_id ? {kind: "lib", id: it.nd_id} : {kind: "dz", id: it.deezer_id, title: it.title, artist: it.artist, album: it.album || ""};
   body.played = it._played; body.duration = it.duration || $("#player").duration || 0; it._played = 0;
   fetch("/api/listen", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body), keepalive: true}).catch(() => {});
@@ -2175,6 +2311,7 @@ const IC = {
   moon: `<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>`,
   nope: `<circle cx="12" cy="12" r="8.5"/><path d="m6.2 6.200 11.600 11.600"/>`,
   more: `<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>`,
+  link: `<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4L12 5.6"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4L12 18.4"/>`,
   cast: `<path d="M3 17a4 4 0 0 1 4 4M3 13a8 8 0 0 1 8 8M3 9.5A11.5 11.5 0 0 1 14.5 21"/><path d="M7 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/>`,
   people: `<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/>`,
   video: `<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10.5 5-3v9l-5-3z"/>`,
@@ -2187,7 +2324,7 @@ function qTier(label) {                        // Opus needs far fewer kbps than
   const br = +m[2], opus = /opus|ogg/i.test(m[1]);
   return br >= (opus ? 155 : 315) ? "high" : br >= (opus ? 110 : 250) ? "ok" : "low";
 }
-const qid = it => it.nd_id ? "n" + it.nd_id : "d" + it.deezer_id;
+const qid = it => it.nd_id ? "n" + it.nd_id : it.mix_url ? "m" + it.mix_url : "d" + it.deezer_id;
 function setPP(paused) { setTimeout(markPlaying, 0); $("#mini-pp").innerHTML = paused ? PP_PLAY : PP_PAUSE; $("#mini-pp").setAttribute("aria-label", paused ? "Play" : "Pause");
   const b = $("#np-pp"); if (b) { b.innerHTML = paused ? PP_PLAY.replace(/24/g, "30") : PP_PAUSE.replace(/24/g, "30"); b.setAttribute("aria-label", paused ? "Play" : "Pause"); }
   $("#np")?.classList.toggle("paused", paused); }
@@ -2358,7 +2495,7 @@ function renderPlayer() {
       <button class="${!lyr ? "on" : ""}" onclick="npView='next'; renderPlayer(); document.querySelector('.np-up')?.scrollIntoView({behavior:'smooth'})">${icon("queue")}<span>Up next</span></button>
       <button class="${keepCook !== "off" ? "lit" : ""}" onclick="cookSheet()">${icon("cook")}<span>Cook</span></button>
       <button id="np-sleep" class="${sleepAt || sleepEnd ? "on" : ""}" onclick="sleepSheet()">${icon("moon")}<span>${sleepLeft() || "Sleep"}</span></button>
-      ${it.nd_id || it.owned ? `<button disabled class="have">${icon("check")}<span>In library</span></button>` : `<button onclick="keepIt()">${icon("dl")}<span>Download</span></button>`}</div>
+      ${it.mix_url ? mixActBtn(it) : it.nd_id || it.owned ? `<button disabled class="have">${icon("check")}<span>In library</span></button>` : `<button onclick="keepIt()">${icon("dl")}<span>Download</span></button>`}</div>
     ${lyr ? `<div style="text-align:right;margin:-4px 0 4px"><button class="btn small ghost" onclick="openStage('karaoke')">${icon("full", 15)} Karaoke</button></div><div id="np-lyr" class="lyr"><div class="empty small"><span class="spin"></span></div></div>`
       : `<div class="np-up">${chapHTML(it)}<div class="np-uph"><h2>Up next${up.length ? ` <span class="count">${up.length}</span>` : ""}</h2>${up.length ? `<button class="link" onclick="clearUpcoming()">Clear</button>` : ""}</div>
         ${up.length ? up.slice(0, 100).map((q, k) => { const i = pi + 1 + k; return `<div class="qrow" onclick="pi=${i}; playAt()">
@@ -2463,15 +2600,23 @@ function drawVisual(ts, p) {
 document.addEventListener("keydown", e => { if (stageMode && e.key === "Escape") closeStage(); });
 /* ---------- chapters: which song is playing in a mix, from the song finder ---------- */
 const chapCache = {}; let chapIdx = -2;
+const chapKey = it => it._find ? "f" + it._find : it.nd_id;
 function chapFor(it) {
-  if (!it?.nd_id || !isLong(it)) return null;
-  if (!chapCache[it.nd_id]) { chapCache[it.nd_id] = {state: "loading", tracks: []}; loadChap(it); }
-  return chapCache[it.nd_id];
+  if (it?.mix_url && !it._find) return null;
+  if (!it?._find && (!it?.nd_id || !isLong(it))) return null;
+  if (!chapCache[chapKey(it)]) { chapCache[chapKey(it)] = {state: "loading", tracks: []}; loadChap(it); }
+  return chapCache[chapKey(it)];
 }
 async function loadChap(it) {
-  const r = await api(`/api/chapters/${it.nd_id}`).catch(() => ({state: "none", tracks: []}));
-  chapCache[it.nd_id] = r; chapIdx = -2;
-  if (["queued", "downloading", "listening"].includes(r.state)) setTimeout(() => { if (pq[pi] === it) loadChap(it); }, 5000);
+  const r = await api(it._find ? `/api/chapters/find/${it._find}` : `/api/chapters/${it.nd_id}`).catch(() => ({state: "none", tracks: []}));
+  const was = chapCache[chapKey(it)];
+  chapCache[chapKey(it)] = r; chapIdx = -2;
+  if (it._find && r.file && !it._inLib) { it._inLib = true; if (pq[pi] === it && npOpen()) toast("The mix is in your library now"); }
+  if (was && was.tracks && r.tracks.length > was.tracks.length && was.state !== "loading" && pq[pi] === it) {
+    const nw = r.tracks.filter(t => !was.tracks.some(o => o.title === t.title && o.artist === t.artist));
+    if (nw.length === 1) toast(`Heard: ${nw[0].artist} – ${nw[0].title}`); else if (nw.length) toast(`${plural(nw.length, "more song")} found in this mix`);
+  }
+  if (["queued", "downloading", "listening"].includes(r.state)) setTimeout(() => { if (pq[pi] === it) loadChap(it); }, it._find ? 4000 : 5000);
   if (pq[pi] === it && npOpen() && npView !== "lyrics") renderPlayer();
 }
 function chapAt(c, t) { let k = -1; (c?.tracks || []).forEach((x, i) => { if (x.t != null && x.t <= t + 1) k = i; }); return k; }
@@ -2482,6 +2627,11 @@ function chapLine(it) {
 }
 function chapHTML(it) {
   const c = chapFor(it); if (!c || c.state === "loading") return "";
+  if (it._find && ["queued", "downloading", "listening"].includes(c.state) && c.tracks.length) {      // songs as they're heard
+    const k = chapAt(c, $("#player").currentTime);
+    return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2><span class="muted" style="font-size:12px"><span class="spin"></span>${esc(c.message || "Listening")}</span></div>
+      <div class="bar" style="margin:0 0 8px"><i style="width:${Math.max(3, c.progress || 0)}%"></i></div>` + c.tracks.map((x, i) => chapRow(x, i, k)).join("");
+  }
   if (c.state === "none") return c.can_find === false ? "" : `<div class="chapbox"><div class="t">Which songs are in this mix?</div>
     <div class="muted">Umculo listens to the mix on your server and lists every song with its time, so you can see what's playing and jump to it.</div>
     <button class="btn small" style="margin-top:8px" onclick="findChapters()">Find the songs</button></div>`;
@@ -2491,12 +2641,15 @@ function chapHTML(it) {
     <button class="btn small ghost" style="margin-top:8px" onclick="findChapters()">Try again</button></div>`;
   const k = chapAt(c, $("#player").currentTime);
   const missing = c.tracks.filter(x => !x.owned && x.artist).length;
-  return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2>${missing && c.find ? `<button class="btn small ghost" onclick="getMixSongs('${c.find}', this)" title="Make a playlist of this mix's songs and get the ones you don't have from your sources">Get the ${missing} missing</button>` : ""}</div>` + c.tracks.map((x, i) => `<div class="qrow chap${i === k ? " on" : ""}" data-ci="${i}" ${x.t != null ? `onclick="chapSeek(${x.t})"` : ""}>
+  return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2>${missing && c.find ? `<button class="btn small ghost" onclick="getMixSongs('${c.find}', this)" title="Make a playlist of this mix's songs and get the ones you don't have from your sources">Get the ${missing} missing</button>` : ""}</div>` + c.tracks.map((x, i) => chapRow(x, i, k)).join("");
+}
+function chapRow(x, i, k) {
+  return `<div class="qrow chap${i === k ? " on" : ""}" data-ci="${i}" ${x.t != null ? `onclick="chapSeek(${x.t})"` : ""}>
       <span class="time">${x.t != null ? hms(x.t) : "–"}</span><div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}${x.owned ? ` · <span class="own">in your library</span>` : ""}</div></div>
-      <button class="icon sm" onclick="event.stopPropagation(); songMenu(${esc(JSON.stringify(x.artist))}, ${esc(JSON.stringify(x.title))})" aria-label="Find or buy this song" title="Find or buy this song">${icon("more", 18)}</button></div>`).join("");
+      <button class="icon sm" onclick="event.stopPropagation(); songMenu(${esc(JSON.stringify(x.artist))}, ${esc(JSON.stringify(x.title))})" aria-label="Find this song" title="Find this song">${icon("more", 18)}</button></div>`;
 }
 function chapTick() {
-  const it = pq[pi], c = it && chapCache[it.nd_id]; if (!c || !c.tracks?.length || !npOpen()) return;
+  const it = pq[pi], c = it && chapCache[chapKey(it)]; if (!c || !c.tracks?.length || !npOpen()) return;
   const k = chapAt(c, $("#player").currentTime); if (k === chapIdx) return; chapIdx = k;
   const line = $("#np-chap"), x = c.tracks[k];
   if (line) line.innerHTML = x ? `${icon("queue", 15)}<span>${esc(x.artist)} – ${esc(x.title)}</span>` : "";
@@ -2548,8 +2701,10 @@ vidEl.muted = true; vidEl.playsInline = true; vidEl.preload = "auto"; vidEl.clas
 vidEl.setAttribute("playsinline", ""); vidEl.setAttribute("muted", ""); vidEl.disablePictureInPicture = false;
 vidEl.onloadedmetadata = () => vidSync();
 vidEl.onerror = () => { if (!vidEl.getAttribute("src")) return; const id = vidEl._for; vidEl.removeAttribute("src"); vidEl._for = null;
-  if (vidInfo[id]) vidInfo[id].available = false; toast("The video wouldn't play; carrying on with the audio"); renderPlayer(); };
+  const v = Object.entries(vidInfo).find(([k]) => k === id || "n" + k === id); if (v) v[1].available = false;
+  toast("The video wouldn't play; carrying on with the audio"); renderPlayer(); };
 function vidInfoFor(it) {
+  if (it?.mix_url) return vidInfo[qid(it)] || (vidInfo[qid(it)] = {available: true, mix: true, stream: true, saved: false});
   if (!it?.nd_id || !isLong(it)) return null;
   if (vidInfo[it.nd_id]) return vidInfo[it.nd_id];
   vidInfo[it.nd_id] = {loading: true};
@@ -2557,19 +2712,19 @@ function vidInfoFor(it) {
     .catch(() => { vidInfo[it.nd_id] = {available: false}; });
   return vidInfo[it.nd_id];
 }
-const vidShowing = it => videoOn && npView !== "lyrics" && !!(vidInfo[it?.nd_id] || {}).available;
+const vidShowing = it => videoOn && npView !== "lyrics" && !!(vidInfo[it?.mix_url ? qid(it) : it?.nd_id] || {}).available;
 function npArt(it) {
   const v = vidInfoFor(it);
   if (!v || !v.available) return artHTML(it, "np-art") + (v && v.loading ? `<div class="vid-row"><span class="vid-tg ghost"><span class="spin"></span>Looking for the video…</span></div>` : "");
   const row = `<div class="vid-row"><button class="vid-tg${videoOn ? " on" : ""}" onclick="toggleVideo()" aria-pressed="${videoOn}">${icon("video", 17)}<span>${videoOn ? "Video on" : "Watch the video"}</span></button>
-    ${videoOn && !v.saved ? `<button class="vid-tg ghost" onclick="saveVideo()" title="Keep a copy, so it plays without the internet">${v.saving ? `<span class="spin"></span>Saving…` : `${icon("dl", 16)}<span>Save it</span>`}</button>` : ""}
+    ${videoOn && !v.saved && !v.stream ? `<button class="vid-tg ghost" onclick="saveVideo()" title="Keep a copy, so it plays without the internet">${v.saving ? `<span class="spin"></span>Saving…` : `${icon("dl", 16)}<span>Save it</span>`}</button>` : ""}
     ${videoOn && v.saved ? `<span class="vid-tg ghost">${icon("check", 16)}<span>Saved</span></span>` : ""}</div>`;
   return (vidShowing(it) ? `<div class="artbox np-art vid"><div id="np-vidslot"></div><button class="vid-fs" onclick="vidFull()" aria-label="Full screen" title="Full screen">${icon("full", 18)}</button></div>` : artHTML(it, "np-art")) + row;
 }
 function vidSync() {
   const it = pq[pi], p = $("#player");
   if (!it || !vidShowing(it) || !vidEl.isConnected) { if (!vidEl.paused) vidEl.pause(); return; }
-  if (vidEl._for !== it.nd_id) { vidEl._for = it.nd_id; vidEl.src = `/api/video/${it.nd_id}`; return; }
+  if (vidEl._for !== qid(it)) { vidEl._for = qid(it); vidEl.src = it.mix_url ? `/api/mixvideo?u=${encodeURIComponent(it.mix_url)}` : `/api/video/${it.nd_id}`; return; }
   if (vidEl.readyState < 1) return;
   vidEl.playbackRate = p.playbackRate || 1;
   if (!vidEl.seeking && Math.abs(vidEl.currentTime - p.currentTime) > 0.5) vidEl.currentTime = p.currentTime;

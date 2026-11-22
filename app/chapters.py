@@ -28,6 +28,10 @@ def view(r):
     if not f:
         return {"state": "none", "tracks": [], "message": "", "progress": 0,
                 "can_find": core.links.recognition_available()}
+    return find_view(f)
+
+
+def find_view(f):
     tracks = []
     for t in f.get("tracks") or []:
         a, owned = t.get("artist", ""), t.get("owned") or ""
@@ -37,7 +41,7 @@ def view(r):
         tracks.append({"t": t.get("t"), "artist": a, "title": t.get("title", ""), "owned": owned})
     tracks.sort(key=lambda t: (t["t"] is None, t["t"] or 0))
     return {"state": f["state"], "progress": f.get("progress", 0), "message": f.get("message", ""), "find": f["id"],
-            "tracks": tracks}
+            "tracks": tracks, "file": bool(f.get("file"))}
 
 
 def wanted():
@@ -83,6 +87,13 @@ def get_wanted(b):
 def handle_get(path, _qs):
     if path == "/api/chapters/wanted":
         return {"songs": wanted()}
+    m = re.match(r"^/api/chapters/find/([0-9a-f]{12})$", path)
+    if m:                                      # a mix that's still downloading / being listened to
+        with core.links.LOCK:
+            f = core.links.FINDS.get(m.group(1))
+        if not f or not core.users.mine(f):
+            raise LookupError("Song finder not found")
+        return find_view(f)
     m = re.match(r"^/api/chapters/([\w-]{1,40})$", path)
     if not m:
         return None

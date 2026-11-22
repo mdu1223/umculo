@@ -32,6 +32,7 @@
 - **Alarms and automations.** Wake up to a playlist, smart mix, show or radio on a Home Assistant speaker, getting louder. A hook address lets Home Assistant automations start music ("when I get home").
 - **Songs from your mixes.** Every song in your mixes' tracklists that you don't have, in one list: get them all from your sources into a playlist (optional buy links: Settings → Where to look).
 - **The inbox.** Drop music you bought (files or zips) into `Music/_inbox` and Umculo files it with tags and covers. Works well with [bandcampsync](https://github.com/meeb/bandcampsync) pointed at the inbox.
+- **Mixes for you.** DJ mixes picked from the shows, DJs and styles you download and play (YouTube and Hearthis.at), and a mix search, so you never need YouTube to find sets. Tap to play straight away; Download asks once about subscribing, finding the songs and the video, then keeps playing while it downloads and lists the songs as they're heard.
 - **Watch the mix.** Turn on *Video* while a DJ mix plays and the set's video plays along, in step with the audio. Tick *Also save the video* when you download a mix or subscribe to a show to keep the video too (up to 720p, next to the mix in a hidden `.video` folder).
 - **Tidy-up tools.** One folder per artist, duplicates removed, cover art and lyrics added.
 - **Family accounts.** Everyone gets their own library, playlists and history. You choose what each person can do, and they can ask you for songs.

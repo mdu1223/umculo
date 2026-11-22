@@ -724,6 +724,15 @@ def run_find(f):
         fset(f, state="downloading", message="Downloading the mix to listen to it",
              tracks=[{**t, "from": "tracklist", "hits": 0} for t in listed])
         path = f["local"] if f.get("local") else dl_link(req)     # a mix already in the library: just listen to it
+        if f.get("keep") and not f.get("local"):    # keeping it: into the library first, so it plays from there while we listen
+            final = core.file_into_library(path, req)
+            core.request_scan()
+            f["file"] = final
+            if e.get("page"):
+                core.video.record(final, e["page"], bool(f.get("video")))
+            path = final
+            f["local"] = final                       # from here on it's the library's copy: never deleted
+            fset(f, message="In your library: listening for the songs")
         dur = core.audio_duration(path) or e.get("duration") or 0
         rec = recognizer()
         heard, fails, rec_error = [], 0, ""
@@ -748,6 +757,7 @@ def run_find(f):
                         break
                 if hit:
                     heard.append({"t": off, "artist": hit[0], "title": hit[1]})
+                    fset(f, tracks=merge_tracks(listed, heard))    # songs show up as they're heard
                 if not CFG["test_shazam"]:
                     time.sleep(CFG["finder_pause"])
         if f.get("cancel"):
@@ -758,13 +768,6 @@ def run_find(f):
             t["owned"] = owned(t["artist"], t["title"])
         if f.get("local"):
             path = ""                                # never delete the library's copy
-        elif f.get("keep"):
-            final = core.file_into_library(path, req)
-            core.request_scan()
-            f["file"] = final
-            path = ""
-            if e.get("page"):
-                core.video.record(final, e["page"], bool(f.get("video")))
         how = ("audio recognition" if heard else "") + (" and " if heard and listed else "") + ("the published tracklist" if listed else "")
         msg = (f"Found {core.plural(len(tracks), 'song')}" + (f" using {how}" if how else "") if tracks else
                ("No songs recognised" if rec else "No tracklist published, and audio recognition isn't installed"))
