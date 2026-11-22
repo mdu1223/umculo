@@ -52,6 +52,7 @@ import migrate  # noqa: E402
 import listening  # noqa: E402
 import importers  # noqa: E402
 import video  # noqa: E402
+import songvideo  # noqa: E402
 import chapters  # noqa: E402
 import radio  # noqa: E402
 import cast  # noqa: E402
@@ -68,7 +69,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.4.3"
+VERSION = "3.5.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2667,7 +2668,7 @@ class Handler(BaseHTTPRequestHandler):
                 tr_set(job, tr, state="downloading", message="Starting your choice")
                 POOL.submit(manual_pick, job, tr, chk["target"], cand)
                 return self.send_json({"ok": True})
-            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0]) or chapters.handle_post(self.path.split("?")[0], b) or mixfeed.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or notify_people.handle_post(self.path.split("?")[0], b) or gigs.handle_post(self.path.split("?")[0], b) or alarms.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
+            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0], b) or chapters.handle_post(self.path.split("?")[0], b) or mixfeed.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or notify_people.handle_post(self.path.split("?")[0], b) or gigs.handle_post(self.path.split("?")[0], b) or alarms.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
             if out is None:
                 out = listening.handle_post(self.path.split("?")[0], b)
             if out is None:
@@ -2820,6 +2821,7 @@ def main():
     mixtidy.init(sys.modules[__name__])
     likes.init(sys.modules[__name__])
     video.init(sys.modules[__name__])
+    songvideo.init(sys.modules[__name__])
     chapters.init(sys.modules[__name__])
     radio.init(sys.modules[__name__])
     cast.init(sys.modules[__name__])

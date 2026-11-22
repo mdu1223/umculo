@@ -200,6 +200,10 @@ def info(sid):
     mix = is_mix(row)
     saved = os.path.exists(sidecar(row["path"]))
     st = SAVING.get(row["path"]) or {}
+    if not mix:                                       # a song: its official music video, lined up with your copy
+        sv = core.songvideo.state(row) if not saved else {"available": True, "offset": (SRC.get(row["path"]) or {}).get("offset", 0)}
+        return {"mix": False, **sv, "saved": saved, "saving": st.get("state") == "saving",
+                "message": st.get("message", ""), "progress": st.get("progress", 0)}
     page = page_for(row) if mix and not saved else ""
     return {"mix": mix, "available": bool(saved or page), "saved": saved, "saving": st.get("state") == "saving",
             "message": st.get("message", ""), "progress": st.get("progress", 0),
@@ -214,9 +218,13 @@ def serve(h, sid, q=None):
         return core.subsonic.serve_file(h, sv, "video/mp4")
     if test_file():
         return core.subsonic.serve_file(h, test_file(), "video/mp4")
-    page = page_for(row, search=is_mix(row))
+    if is_mix(row):
+        page = page_for(row, search=True)
+    else:
+        k = SRC.get(row["path"]) or {}
+        page = k.get("page") if k.get("ok") else ""
     if not page:
-        raise LookupError("No video for this mix")
+        raise LookupError("No video for this song")
     return proxy(h, page, vfmt(q or quality()), "video/mp4")
 
 
@@ -322,6 +330,27 @@ def save_all():
     return {**all_view(), "added": len(new)}
 
 
+def save_songs(ids):
+    """Save the official video of each of these songs (a playlist's), in the background, one at a time."""
+    if not core.users.can("download"):
+        raise PermissionError("Saving videos needs download permission")
+    srv, u = core.server, core.users.current()
+    rows = []
+    for sid in ids[:2000]:
+        r = srv.db.q(f"SELECT * FROM song WHERE id=? AND {srv.lib_sql(u)}", (str(sid),), one=True)
+        if r and not os.path.exists(sidecar(r["path"])):
+            rows.append(r)
+    with LOCK:
+        have = {x["path"] for x in ALL["queue"]} | {ALL["current"]}
+        new = [{"path": r["path"], "title": r["title"], "duration": r["duration"], "artist": r["artist"], "song": not is_mix(r)}
+               for r in rows if r["path"] not in have]
+        ALL["queue"] += new
+        if not ALL["running"]:
+            ALL.update(done=0, failed=0, none=0, errors=[], running=True)
+            threading.Thread(target=run_all, daemon=True).start()
+    return {**all_view(), "added": len(new)}
+
+
 def run_all():
     """One video at a time, so the server and the internet line stay usable."""
     try:
@@ -333,7 +362,13 @@ def run_all():
                 ALL["current"] = job["title"]
             if os.path.exists(sidecar(job["path"])) or not os.path.exists(job["path"]):
                 continue
-            page = page_for(job)
+            if job.get("song"):
+                k = SRC.get(job["path"]) or {}
+                if not k.get("song"):
+                    k = core.songvideo.find(job)
+                page = k.get("page") if k.get("ok") else ""
+            else:
+                page = page_for(job)
             if not page:
                 ALL["none"] += 1
                 continue
@@ -348,7 +383,7 @@ def run_all():
     finally:
         ALL["running"], ALL["current"] = False, ""
         if ALL["done"] or ALL["failed"]:
-            core.log(f"mix videos: {ALL['done']} saved, {ALL['failed']} failed, {ALL['none']} without a video found")
+            core.log(f"videos: {ALL['done']} saved, {ALL['failed']} failed, {ALL['none']} without a video found")
 
 
 def save(sid):
@@ -357,7 +392,15 @@ def save(sid):
     row = song_row(sid)
     if os.path.exists(sidecar(row["path"])):
         return {"ok": True, "saved": True}
-    page = page_for(row)
+    if is_mix(row):
+        page = page_for(row)
+    else:
+        k = SRC.get(row["path"]) or {}
+        if not k.get("song"):
+            k = core.songvideo.find(row)
+        if not k.get("ok"):
+            raise LookupError(k.get("why") or "No official video for this song")
+        page = k["page"]
     if not page:
         raise LookupError("No video found for this mix")
     start_save(row["path"], page)
@@ -389,9 +432,11 @@ def handle_get(h, path, qs=None):
     return True
 
 
-def handle_post(path):
+def handle_post(path, b=None):
     if path == "/api/video/all":
         return save_all()
+    if path == "/api/video/songs":
+        return save_songs(list((b or {}).get("ids") or []))
     m = re.match(r"^/api/video/([\w-]{1,40})/(save|remove)$", path)
     if not m:
         return None

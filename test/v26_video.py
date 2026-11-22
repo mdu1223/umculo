@@ -1,5 +1,5 @@
 """v2.6 video for DJ mixes: a mix has a video to watch (streamed with seeking), it can be saved next to the mix,
-the saved copy follows the mix when mixes are tidied, songs that aren't mixes have none.
+the saved copy follows the mix when mixes are tidied, songs get their official music video lined up with them, and a playlist's videos can be saved.
 Usage: python3 test/v26_video.py PORT STATE_DIR"""
 import json, os, subprocess, sys, time, urllib.request
 PORT, S = sys.argv[1], sys.argv[2]; B = f"http://localhost:{PORT}"; bad = []; n = 0
@@ -47,7 +47,21 @@ check(os.path.exists(side), "the video is saved next to the mix, in a hidden fol
 check(web(f"/api/video/{sid}/info").get("saved"), "and it shows as saved")
 ngud = web(f"/rest/search3.view?{AUTH}&query=Ngud&songCount=1")["subsonic-response"]["searchResult3"]["song"][0]
 ni = web(f"/api/video/{ngud['id']}/info")
-check(ni.get("mix") is False and not ni.get("available"), "a normal song has no video")
+check(ni.get("mix") is False, "a normal song isn't a mix")
+for _ in range(40):                                     # its official music video is looked up in the background
+    if not ni.get("looking"): break
+    time.sleep(0.25); ni = web(f"/api/video/{ngud['id']}/info")
+check(ni.get("available") and ni.get("offset") == 2.0, f"a song's music video, lined up with the song (+2 s) {ni}")
+c, h, b = raw(f"/api/video/{ngud['id']}", headers={"Range": "bytes=0-99"})
+check(c == 206 and h.get("Content-Type") == "video/mp4", f"the music video streams ({c})")
+r = web("/api/video/songs", "POST", {"ids": [ngud["id"]]})
+check(r.get("added") == 1, f"save a playlist's videos: the song is queued {r}")
+for _ in range(40):
+    if web(f"/api/video/{ngud['id']}/info").get("saved"): break
+    time.sleep(0.25)
+si = web(f"/api/video/{ngud['id']}/info")
+check(si.get("saved") and si.get("available") and si.get("offset") == 2.0, f"the song's video is saved and keeps its offset {si}")
+check(web("/api/video/songs", "POST", {"ids": [ngud["id"]]}).get("added") == 0, "a song already saved isn't queued again")
 check("error" in web("/api/video/nope/info"), "unknown song is an error")
 r = web("/api/mixes/tidy", "POST")
 check(r.get("moved", 0) >= 1, "tidy mixes moves the loose mix into its show's folder")
@@ -77,7 +91,7 @@ for _ in range(40):
     st = web("/api/video/all")
     if not st.get("running"): break
     time.sleep(0.5)
-check(st.get("done") == 1 and os.path.exists(os.path.join(mixes, "DJ Test", ".video", "Deep Session 03.mp4")), f"and its video is saved {st}")
+check(st.get("done") >= 1 and os.path.exists(os.path.join(mixes, "DJ Test", ".video", "Deep Session 03.mp4")), f"and its video is saved {st}")
 check(web("/api/video/all", "POST").get("added") == 0, "running it again finds nothing left to do")
 print(f"V26 OK {n}" if not bad else f"V26 FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)

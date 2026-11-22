@@ -1353,7 +1353,8 @@ async function openPl(id) {
     <div class="chips" style="margin:10px 0">
       <button class="btn small ghost" onclick="plRename('${id}')">Rename</button>
       <button class="btn small ghost" onclick="plAct('${id}','${d.watch ? "unwatch" : "watch"}',this)">${d.watch ? "Stop watching" : "Watch"}</button>
-      <button class="btn small ghost" onclick="plDelete('${id}')">Delete</button></div>
+      <button class="btn small ghost" onclick="plDelete('${id}')">Delete</button>
+      ${playable.length && canDL() ? `<button class="btn small ghost" onclick="saveVideos(PLROWS['${id}'], this)">${icon("video", 15)} Save videos</button>` : ""}</div>
     <div class="muted" style="margin:0 4px 6px">Tap a song to play. Swipe left or tap ⋯ to remove it or choose another copy.</div>
     <div class="box">${d.rows.map(t => `<div class="sw" data-key="${esc(t.key)}"><div class="sw-act">
         ${t.job && ["kept","top","failed","not_found","done","cancelled"].includes(t.state) ? `<button class="sa pick" onclick='choose(${JSON.stringify(t.job)},${t.i},${JSON.stringify(t.new_quality || t.quality || "")},"${id}")'>Choose a copy</button>` : ""}
@@ -2695,6 +2696,13 @@ vidQ = store.get("umc_vq", ""); masterVol = store.get("umc_vol", 1); for (const 
 let shuffleOn = store.get("umc_shuffle", false), repeatMode = store.get("umc_repeat", "off"), keepCook = store.get("umc_keepcook", "local");
 let cooking = false, sleepAt = 0, sleepEnd = false, sleepTimer = null, unshuffled = null;
 const LONG = 10 * 60;                         // DJ mixes and episodes: remember where you were, allow faster playback
+const canDL = () => !!(me?.user?.is_admin || me?.user?.perms?.download === "yes");
+const songVid = () => !!store.get("umc_songvid", false);          // per device: not everyone has the data
+function setSongVid(on) {
+  store.set("umc_songvid", !!on);
+  for (const k of Object.keys(vidInfo)) if (vidInfo[k] && vidInfo[k].mix === false) delete vidInfo[k];
+  toast(on ? "Music videos on, on this device" : "Music videos off on this device"); if (npOpen()) renderPlayer();
+}
 const isLong = it => (it.duration || $("#player").duration || 0) >= LONG;
 const PP_PLAY = `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>`;
 const PP_PAUSE = `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4.2" height="15" rx="1.4"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.4"/></svg>`;
@@ -3160,20 +3168,25 @@ vidEl.onerror = () => { if (!vidEl.getAttribute("src")) return; const id = vidEl
   toast("The video wouldn't play; carrying on with the audio"); renderPlayer(); };
 function vidInfoFor(it) {
   if (it?.mix_url) return vidInfo[qid(it)] || (vidInfo[qid(it)] = {available: true, mix: true, stream: true, saved: false});
-  if (!it?.nd_id || !isLong(it)) return null;
-  if (vidInfo[it.nd_id]) return vidInfo[it.nd_id];
-  vidInfo[it.nd_id] = {loading: true};
-  api(`/api/video/${it.nd_id}/info`).then(r => { vidInfo[it.nd_id] = r; if (pq[pi] === it && npOpen() && npView !== "lyrics") renderPlayer(); })
-    .catch(() => { vidInfo[it.nd_id] = {available: false}; });
+  if (!it?.nd_id || (!isLong(it) && !songVid())) return null;
+  const have = vidInfo[it.nd_id];
+  if (have && !(have.looking && !have._asking && Date.now() - (have._at || 0) > 4000)) return have;
+  vidInfo[it.nd_id] = {...(have || {loading: true}), _asking: true};
+  api(`/api/video/${it.nd_id}/info`).then(r => {
+    vidInfo[it.nd_id] = {...r, loading: !!r.looking, _at: Date.now()};
+    if (r.looking) setTimeout(() => { if (pq[pi] === it) { vidInfoFor(it); } }, 4000);      // still looking: ask again
+    else if (pq[pi] === it && npOpen() && npView !== "lyrics") renderPlayer();
+  }).catch(() => { vidInfo[it.nd_id] = {available: false}; });
   return vidInfo[it.nd_id];
 }
 const vidShowing = it => videoOn && npView !== "lyrics" && !!(vidInfo[it?.mix_url ? qid(it) : it?.nd_id] || {}).available;
 function npArt(it) {
   const v = vidInfoFor(it);
-  if (!v || !v.available) return artHTML(it, "np-art") + (v && v.loading ? `<div class="vid-row"><span class="vid-tg ghost"><span class="spin"></span>Looking for the video…</span></div>` : "");
+  if (!v || !v.available) return artHTML(it, "np-art") + (v && v.loading && (it.mix_url || isLong(it)) ? `<div class="vid-row"><span class="vid-tg ghost"><span class="spin"></span>Looking for the video…</span></div>` : "");
   const row = `<div class="vid-row"><button class="vid-tg${videoOn ? " on" : ""}" onclick="toggleVideo()" aria-pressed="${videoOn}">${icon("video", 17)}<span>${videoOn ? "Video on" : "Watch the video"}</span></button>
     ${videoOn && !v.saved && !v.stream ? `<button class="vid-tg ghost" onclick="saveVideo()" title="Keep a copy, so it plays without the internet">${v.saving ? `<span class="spin"></span>Saving…` : `${icon("dl", 16)}<span>Save it</span>`}</button>` : ""}
     ${videoOn && v.saved ? `<span class="vid-tg ghost">${icon("check", 16)}<span>Saved</span></span>` : ""}</div>`;
+  if (!it.mix_url && !isLong(it) && v.looking) return artHTML(it, "np-art");
   return (vidShowing(it) ? `<div class="artbox np-art vid"><div id="np-vidslot"></div>
       <div class="vid-bar"><button class="vid-qb" onclick="event.stopPropagation(); vqMenu()" aria-label="Video quality" title="Video quality">${vqLabel()}</button>
         ${desk() ? `<button class="vid-fs2" onclick="toggleTheater()" aria-label="Theater mode" title="Theater mode (T)">${icon(document.body.classList.contains("theater") ? "down" : "up", 18)}</button>` : ""}
@@ -3189,7 +3202,11 @@ function vidSync() {
     vidEl.src = it.mix_url ? `/api/mixvideo?u=${encodeURIComponent(it.mix_url)}${q ? "&" + q : ""}` : `/api/video/${it.nd_id}${q ? "?" + q : ""}`; return; }
   if (vidEl.readyState < 1) return;
   vidEl.playbackRate = p.playbackRate || 1;
-  if (!vidEl.seeking && Math.abs(vidEl.currentTime - p.currentTime) > 0.5) vidEl.currentTime = p.currentTime;
+  // a music video can start earlier or later than the song: video time = song time + offset
+  const off = it.mix_url ? 0 : +((vidInfo[it.nd_id] || {}).offset || 0), want = p.currentTime + off;
+  const outside = want < 0 || (vidEl.duration && want > vidEl.duration);
+  if (outside) { if (!vidEl.paused) vidEl.pause(); if (!vidEl.seeking && want < 0 && vidEl.currentTime > 0.1) vidEl.currentTime = 0; return; }
+  if (!vidEl.seeking && Math.abs(vidEl.currentTime - want) > (off ? 0.25 : 0.5)) vidEl.currentTime = want;
   if (p.paused) { if (!vidEl.paused) vidEl.pause(); } else if (vidEl.paused) vidEl.play().catch(() => {});
 }
 /* video quality: the picture is fetched on its own (the sound comes from the audio player), so it can be sharp */
@@ -3241,10 +3258,19 @@ function vidFull() {
   const f = vidEl.requestFullscreen || vidEl.webkitRequestFullscreen;
   if (f) f.call(vidEl).catch?.(() => {}); else if (vidEl.webkitEnterFullscreen) vidEl.webkitEnterFullscreen();
 }
+async function saveVideos(rows, btn) {           // a playlist's: each song's official video, kept on the server
+  const ids = (rows || []).filter(t => t.nd_id).map(t => t.nd_id);
+  if (!ids.length) return;
+  if (!confirm(`Save the official music video of ${plural(ids.length, "song")}? (${lc1(vidSaveText())} of video; songs without an official video, or whose video is a different edit, are skipped.) It runs on your server, one at a time.`)) return;
+  try { const r = await api("/api/video/songs", {method: "POST", body: JSON.stringify({ids})});
+    toast(`Saving videos: ${plural(r.added, "song")} queued. Saved ones play from your server, even with music videos off`);
+    if (btn) { btn.disabled = true; btn.innerHTML = `${icon("check", 15)} Saving videos`; }
+  } catch (e) { toast(e.message); }
+}
 async function saveVideo() {
   const it = pq[pi]; if (!it?.nd_id) return;
   try { await api(`/api/video/${it.nd_id}/save`, {method: "POST"}); vidInfo[it.nd_id] = {...vidInfo[it.nd_id], saving: true}; renderPlayer();
-    toast("Saving the video next to the mix; it'll play from your server");
+    toast("Saving the video on your server; it'll play from there");
     const poll = async () => { const r = await api(`/api/video/${it.nd_id}/info`).catch(() => null); if (!r) return;
       if (r.saving) return setTimeout(poll, 5000);
       vidInfo[it.nd_id] = r; if (r.saved) toast("Video saved"); else if (r.message) toast(r.message); if (pq[pi] === it && npOpen()) renderPlayer(); };
@@ -3535,6 +3561,8 @@ async function openAccount() {
   }
   const wait = approvals.filter(a => a.state === "waiting");
   if (u.is_admin && wait.length) h += `<h2>Waiting for you <span class="count">${wait.length}</span></h2>` + approvalRows(wait);
+  h += `<h2>Music videos</h2><div class="box"><label class="opt" style="margin:0"><input type="checkbox" ${songVid() ? "checked" : ""} onchange="setSongVid(this.checked)"> <span><b>Music videos on this device</b><br>
+      <span class="muted">Songs with an official video on YouTube show it while they play, in step with your copy. Streaming uses data: about 30 MB a song at 1080p (less at lower quality). Off by default; saved videos play from your server either way.</span></span></label></div>`;
   h += `<h2>Your music app</h2><div class="box"><div class="muted">Sign in to Arpeggi (or any Subsonic app) with:</div>
       ${me.builtin && me.anywhere && me.anywhere !== location.origin
         ? `<div class="set-row"><span>Server, anywhere</span><b class="sel">${esc(me.anywhere)}</b></div><div class="set-row"><span>Server, at home</span><b class="sel">${esc(location.origin)}</b></div>`
@@ -4193,6 +4221,8 @@ function renderSettings() {
     <div class="muted" style="margin:0 4px">Applies to new downloads and upgrades. Files you already have aren't touched.</div>
     <div class="box" style="margin-top:8px"><label class="opt" style="margin:0"><input type="checkbox" id="set-best_effort" ${s.best_effort !== false ? "checked" : ""}> <span><b>Best effort</b><br>
       <span class="muted">When your quality isn't out there, take the best copy there is, and keep looking for a better one. Off: wait until your quality turns up.</span></span></label></div>
+    <h2>Music videos</h2><div class="box"><label class="opt" style="margin:0"><input type="checkbox" ${songVid() ? "checked" : ""} onchange="setSongVid(this.checked)"> <span><b>Music videos on this device</b><br>
+      <span class="muted">Songs with an official video on YouTube show it while they play, in step with your copy. Streaming uses data: about 30 MB a song at 1080p (less at lower quality). Off by default; saved videos play from your server either way.</span></span></label></div>
     <h2>Mix video quality</h2>
     <div class="box"><div class="muted">For watching mixes and for saving their videos. Higher is sharper and uses more data and space (1080p is about 1.5 GB an hour saved).</div>
       <div class="seg" style="margin-top:8px">${[["480", "480p"], ["720", "720p"], ["1080", "1080p"], ["1440", "1440p"], ["best", "Best"]].map(([v, l]) => `<button type="button" class="${(s.video_quality || "1080") === v ? "on" : ""}" onclick="saveVideoQuality('${v}', this)">${l}</button>`).join("")}</div>

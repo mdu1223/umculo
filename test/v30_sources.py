@@ -51,6 +51,37 @@ check(len(fp) == 20 and fp[0] == 30 and fp[1] - fp[0] == 180, f"the first pass c
 res = {30: ("A", "One"), 210: ("A", "One"), 390: ("B", "Two"), 570: None, 750: ("C", "Three")}
 check(g["refine"](res, 60) == [300, 480, 660], f"listen again only where the song changes {g['refine'](res, 60)}")
 check(g["refine"]({30: ("A", "1"), 120: ("B", "2")}, 60) == [], "not closer than 90 seconds")
+# music videos: official ones only, and lined up with your copy (or not at all)
+import importlib.util
+_sp = importlib.util.spec_from_file_location("sv", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "songvideo.py"))
+sv = importlib.util.module_from_spec(_sp); _sp.loader.exec_module(sv)
+off_ = lambda t, c: sv.is_official({"title": t, "channel": c}, "Rihanna", "Umbrella (feat. JAY-Z)")
+check(off_("Rihanna - Umbrella (Orange Version) (Official Music Video) ft. JAY-Z", "RihannaVEVO"), "the artist's own video counts")
+check(not off_("Rihanna - Umbrella (Lyrics) ft. Jay-Z", "7clouds"), "a lyric video doesn't")
+check(not off_("Rihanna - Umbrella (Live at the BRITs)", "RihannaVEVO"), "a live version doesn't")
+check(not off_("Umbrella - Rihanna cover", "Some Singer"), "a cover doesn't")
+check(not off_("Rihanna - Diamonds (Official Video)", "RihannaVEVO"), "another song doesn't")
+import random, struct, wave, tempfile
+_d = tempfile.mkdtemp(); R = 8000
+def _beats(sec, seed):
+    rnd = random.Random(seed); out = [0.0] * int(sec * R); t = 0.0
+    while t < sec - 0.2:
+        amp = rnd.uniform(0.2, 0.9); ln = int(rnd.uniform(0.02, 0.12) * R); st = int(t * R)
+        for i_ in range(ln):
+            if st + i_ < len(out): out[st + i_] += amp * rnd.uniform(-1, 1) * (1 - i_ / ln)
+        t += rnd.choice([0.25, 0.25, 0.5, 0.125, 0.375, 0.75])
+    return out
+def _wav(name, x):
+    pth = os.path.join(_d, name); w = wave.open(pth, "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(R)
+    w.writeframes(b"".join(struct.pack("<h", int(max(-1, min(1, v)) * 20000)) for v in x)); w.close(); return pth
+_song = _beats(150, 1)
+_s = _wav("song.wav", _song)
+_v = _wav("video.wav", _beats(7.35, 99) + _song)
+_e = _wav("edit.wav", _song[:int(80 * R)] + _beats(10, 77) + _song[int(80 * R):])
+o1, ok1 = sv.align(_s, _v, 150.0, 157.35)
+check(ok1 and abs(o1 - 7.35) < 0.06, f"a video with a 7.35 s intro is lined up {o1} {ok1}")
+o2, ok2 = sv.align(_s, _e, 150.0, 160.0)
+check(not ok2, f"a different edit (a skit in the middle) is refused {o2} {ok2}")
 # the inbox
 M = os.path.join(S, "data", "Music"); inbox = os.path.join(M, "_inbox"); os.makedirs(inbox, exist_ok=True)
 def mp3(path, artist, title):
