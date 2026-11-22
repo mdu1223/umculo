@@ -11,6 +11,7 @@ run() {  # name, port, command...
   kill $(cat "$S/pids" 2>/dev/null) 2>/dev/null; sleep 1
   case "$r" in *OK*) echo "PASS $name: $r";; *) echo "FAIL $name: $r"; FAIL=1;; esac
 }
+python3 test/page_check.py || FAIL=1
 run api      8098 python3 test/v20_api.py 8098 mdu ndpass
 run family   8099 python3 test/v20_family.py 8099
 run api21    8100 python3 test/v21_api.py 8100 mdu ndpass

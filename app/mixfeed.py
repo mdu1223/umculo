@@ -8,6 +8,9 @@ Where it looks: YouTube (search and your shows' channels) and Hearthis.at (DJs' 
 GET  /api/mixfeed                 -> {"shelves": [{"id", "title", "sub", "items": [mix]}], "building", "at"}
 POST /api/mixfeed/refresh         -> build again now
 POST /api/mixfeed/hide            {id, channel?}
+POST /api/mixfeed/later           {mix} | {id, remove: true}       saved for later (no download)
+GET  /api/mixdj?url=<channel>&name=  -> {"name", "url", "thumb", "items", "subscribed", "similar"}   a DJ's or show's page
+POST /api/mixdj/subscribe         {url, video}
 POST /api/mixfeed/get             {url, title?, subscribe, find, video}   -> {"find" | "request", "subscribed"}
 GET  /api/mixsearch?q=           -> {"items": [mix]}  any DJ, show or style: long sets only, yours marked
 GET  /api/mixstream?u=<page>      -> the mix's audio, streamed (seekable) while it downloads
@@ -238,7 +241,80 @@ def feed():
     hidden, muted = set(p.get("hidden") or []), {x.lower() for x in p.get("muted") or []}
     shelves = [{**s, "items": [m for m in s["items"] if m["id"] not in hidden and (m["channel"] or "").lower() not in muted]}
                for s in c["shelves"]]
-    return {"shelves": [s for s in shelves if s["items"]], "building": c["building"], "at": c["at"]}
+    return {"shelves": [s for s in shelves if s["items"]], "building": c["building"], "at": c["at"],
+            "later": list(reversed(p.get("later") or []))[:60]}
+
+
+MIX_KEYS = ("id", "url", "title", "channel", "channel_url", "duration", "views", "thumb", "source")
+
+
+def later(b):
+    i = uid()
+    with LOCK:
+        p = PREFS.setdefault(i, {"hidden": [], "muted": []})
+        lst = [m for m in p.get("later") or [] if m.get("id") != (b.get("id") or (b.get("mix") or {}).get("id"))]
+        if not b.get("remove"):
+            m = {k: (b.get("mix") or {}).get(k) for k in MIX_KEYS}
+            check_url(m.get("url"))
+            if not m.get("id"):
+                raise ValueError("Which mix?")
+            m["title"] = str(m.get("title") or "")[:300]
+            lst.append(m)
+        p["later"] = lst[-200:]
+    save()
+    return {"ok": True, "later": list(reversed(p["later"]))}
+
+
+def subscribed_to(url):
+    with core.links.LOCK:
+        return any(core.users.mine(s) and url and (s.get("url") or "").rstrip("/") in (url.rstrip("/"), url.rstrip("/") + "/videos")
+                   for s in core.links.SUBS.values())
+
+
+def dj_page(qs):
+    url = (qs.get("url") or [""])[0].strip()
+    name = (qs.get("name") or [""])[0].strip()[:120]
+    if not (url or name):
+        raise ValueError("Which DJ or show?")
+    t = taste(core.users.current())
+    items = []
+    if url:
+        check_url(url)
+        try:
+            items = yt_channel(url, 60) if "youtube.com" in url else []
+        except Exception as ex:  # noqa: BLE001
+            core.log("DJ page:", ex)
+    if len(items) < 6 and name:
+        try:
+            items += [m for m in yt_search(f"{name} mix", 20) if (m["channel"] or "").lower() == name.lower() or name.lower() in m["title"].lower()]
+        except Exception as ex:  # noqa: BLE001
+            core.log("DJ page search:", ex)
+        try:
+            items += [m for m in hearthis_search(name, 20) if name.lower() in (m["channel"] + " " + m["title"]).lower()]
+        except Exception:  # noqa: BLE001
+            pass
+    seen, out = set(), []
+    for m in items:
+        if m["id"] in seen or m["duration"] < MIN_LEN:
+            continue
+        seen.add(m["id"])
+        out.append({**m, "have": norm(m["title"]) in t["have"]})
+    name = name or (out[0]["channel"] if out else "")
+    similar = []
+    for s in (CACHE.get(uid()) or {}).get("shelves") or []:
+        for m in s["items"]:
+            if m["channel"] and m["channel"].lower() != name.lower() and m["channel"] not in [x["name"] for x in similar]:
+                similar.append({"name": m["channel"], "url": m.get("channel_url") or "", "thumb": m["thumb"]})
+    return {"name": name, "url": url, "thumb": out[0]["thumb"] if out else "", "items": out,
+            "subscribed": subscribed_to(url), "count": len(out), "similar": similar[:10]}
+
+
+def dj_subscribe(b):
+    if not core.users.can("download"):
+        raise PermissionError("Subscribing needs download permission")
+    url = check_url(b.get("url"))
+    show = core.links.resolve(url)
+    return core.links.subscribe_async(show, False, bool(b.get("video")))
 
 
 def search(q):
@@ -339,6 +415,11 @@ def handle_get(h, path, qs):
             return h.send_json({"error": str(ex)}, 400) or True
     if path == "/api/mixstream":
         return stream(h, qs)
+    if path == "/api/mixdj":
+        try:
+            return h.send_json(dj_page(qs)) or True
+        except ValueError as ex:
+            return h.send_json({"error": str(ex)}, 400) or True
     if path == "/api/mixwarm":                     # get a mix's stream address ready before Play is pressed
         page = check_url((qs.get("u") or [""])[0])
         threading.Thread(target=lambda: _warm(page), daemon=True).start()
@@ -354,6 +435,10 @@ def handle_post(path, b):
         return {"ok": True}
     if path == "/api/mixfeed/hide":
         return hide(b)
+    if path == "/api/mixfeed/later":
+        return later(b)
+    if path == "/api/mixdj/subscribe":
+        return dj_subscribe(b)
     if path == "/api/mixfeed/get":
         return get(b)
     return None
