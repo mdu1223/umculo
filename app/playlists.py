@@ -168,26 +168,43 @@ def all_cards(fresh=False):
 
 
 def _all_cards(fresh=False):
-    """Every playlist's card. Works out each song's quality, so it's slow with many playlists: answer from the last
-    result (if it's under 10 minutes old) straight away and work it out again in the background."""
-    age = time.time() - CACHE["at"]
-    if not fresh and CACHE["data"] is not None and age < 8:
-        return CACHE["data"]
-    if not fresh and CACHE["data"] is not None and age < 600:
-        if not CACHE.get("busy"):
-            CACHE["busy"] = True
+    """Every playlist's card. Works out each song's quality, which can be slow on a big library, so nobody waits for
+    it: answer from the last result and work it out again in the background (only the very first time waits)."""
+    if CACHE["data"] is None or CACHE["at"] == 0:      # first time, or a playlist was just changed: work it out now
+        return _build_cards()
+    if fresh or time.time() - CACHE["at"] >= 8:
+        _rebuild_soon()
+    return CACHE["data"]
 
-            def again():
-                try:
-                    _build_cards()
-                finally:
-                    CACHE["busy"] = False
-            threading.Thread(target=again, daemon=True).start()
-        return CACHE["data"]
-    return _build_cards()
+
+def _rebuild_soon():
+    if CACHE.get("busy"):
+        return
+    CACHE["busy"] = True
+
+    def again():
+        try:
+            _build_cards()
+        except Exception as ex:  # noqa: BLE001
+            core.log("playlists: couldn't refresh:", ex)
+        finally:
+            CACHE["busy"] = False
+    threading.Thread(target=again, daemon=True).start()
+
+
+def warm():
+    """At startup, and every few minutes: keep the cards ready so opening Playlists never waits."""
+    while True:
+        try:
+            if CACHE["data"] is None or time.time() - CACHE["at"] > 120:
+                _build_cards()
+        except Exception as ex:  # noqa: BLE001
+            core.log("playlists: couldn't refresh:", ex)
+        time.sleep(60)
 
 
 def _build_cards():
+    t0 = time.time()
     paths = set(files())
     with core.JOB_LOCK:
         paths |= {j["m3u"] for j in core.JOBS.values() if j["kind"] != "album"}
@@ -200,6 +217,9 @@ def _build_cards():
     order = {"working": 0, "watching": 1, "finished": 2, "resting": 3}
     out.sort(key=lambda c: (order[c["status"]], c["name"].lower()))
     CACHE.update(at=time.time(), data=out)
+    took = time.time() - t0
+    if took > 3:
+        core.log(f"playlists: working out {len(out)} playlists took {took:.1f} s")
     return out
 
 
@@ -525,3 +545,4 @@ def init(umculo):
     META.update(core._load_json("playlists_meta.json", {}))
     MIX.update(core._load_json("mixtapes.json", {}))
     threading.Thread(target=mixtapes_loop, daemon=True).start()
+    threading.Thread(target=warm, daemon=True).start()
