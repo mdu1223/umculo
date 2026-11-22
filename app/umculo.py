@@ -68,7 +68,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.4.0"
+VERSION = "3.4.1"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),

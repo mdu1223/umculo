@@ -106,9 +106,13 @@ def slsk_watch():
                         SLSK_WATCH["last"] = now
                         try:
                             if "Disconnecting" in state or "Connecting" in state:
-                                core.http("DELETE", f"{base}/api/v0/server", headers=h, timeout=15, retries=0)
+                                try:                         # slskd wants a reason with a disconnect (a JSON string)
+                                    core.http("DELETE", f"{base}/api/v0/server", body="Umculo: reconnecting", headers=h,
+                                              timeout=15, retries=0)
+                                except Exception as ex:  # noqa: BLE001
+                                    core.log("Soulseek: disconnect first:", ex)
                                 time.sleep(5)
-                            core.http("PUT", f"{base}/api/v0/server", headers=h, timeout=30, retries=0)
+                            core.http("PUT", f"{base}/api/v0/server", body={}, headers=h, timeout=30, retries=0)
                             core.log(f"Soulseek: slskd was {state or 'off'} for {int(off / 60)} min; asked it to reconnect")
                         except Exception as ex:  # noqa: BLE001
                             core.log(f"Soulseek: couldn't ask slskd to reconnect ({ex}); restart slskd if this keeps up")

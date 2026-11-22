@@ -180,7 +180,12 @@ class H(BaseHTTPRequestHandler):
 
     def do_DELETE(self):  # noqa: N802
         print("DELETE", self.path, flush=True)
-        if self.path == "/api/v0/server":
+        if self.path == "/api/v0/server":            # like slskd: the reason comes as a JSON string
+            n = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(n)
+            if "json" not in (self.headers.get("Content-Type") or "") or not body:
+                self.send_response(415); self.send_header("Content-Length", "0"); self.end_headers()
+                return
             STATE["slsk"] = "Disconnected"
         self.j({})
 
@@ -188,6 +193,9 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         d = json.loads(self.rfile.read(n) or b"{}")
         if self.path == "/api/v0/server":                 # slskd: connect to Soulseek
+            if "json" not in (self.headers.get("Content-Type") or ""):
+                self.send_response(415); self.send_header("Content-Length", "0"); self.end_headers()
+                return
             STATE["slsk_puts"] += 1
             if STATE["slsk"] != "Disconnecting":          # stuck halfway: has to be told to disconnect first
                 STATE["slsk"] = "Connected, LoggedIn"
