@@ -1197,7 +1197,11 @@ function updateCount(items) {
   const n = items.filter(q => !["ready","failed"].includes(q.state)).length;
   $("#active-count").innerHTML = n ? `<span class="badge">${n}</span>` : "";
 }
-async function refreshCount() { try { updateCount((await api("/api/requests")).requests); } catch (e) {} }
+async function refreshCount() {                 // only the number: the full list is fetched when Queue is open
+  if (document.hidden) return;
+  try { const r = await api("/api/requests?count=1"); $("#active-count").innerHTML = r.active ? `<span class="badge">${r.active}</span>` : ""; } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshCount(); });
 setInterval(refreshCount, 10000); refreshCount();
 
 /* ---------- playlists: one list ---------- */
@@ -1545,7 +1549,7 @@ function renderLink() {
       <div class="chips"><button class="btn small" onclick="linkImport()">Get all as a playlist</button>
       <button class="btn small ghost" onclick="linkGetAll()">Download all as-is</button></div></div>` : ""}
     <label class="opt"><input type="checkbox" id="find-keep"> When finding songs, also keep the mix itself</label>
-    ${s.podcast ? "" : `<label class="opt"><input type="checkbox" id="link-video" ${store.get("umc_vidsave", false) ? "checked" : ""} onchange="store.set('umc_vidsave', this.checked)"> Also save the video <span class="muted">(mixes; ${vidSaveText().toLowerCase()})</span></label>`}
+    ${s.podcast ? "" : `<label class="opt"><input type="checkbox" id="link-video" ${store.get("umc_vidsave", false) ? "checked" : ""} onchange="store.set('umc_vidsave', this.checked)"> Also save the video <span class="muted">(mixes; ${lc1(vidSaveText())})</span></label>`}
     ${focus ? `<h2>${s.kind === "single" ? "This upload" : "The episode you linked"}</h2><div class="box">${epRow(focus)}</div>` : ""}
     ${rest.length ? `<h2>${focus ? "More" : s.podcast ? "Episodes" : "Uploads"}</h2><div class="box">${rest.slice(0, 60).map(epRow).join("")}</div>` : ""}`);
 }
@@ -1728,11 +1732,27 @@ function mixCtx(e, id) {
 async function mixRefresh(btn) { btn.innerHTML = `<span class="spin"></span>Updating`; try { await api("/api/mixfeed/refresh", {method: "POST", body: "{}"}); } catch (e) {} setTimeout(loadMixFeed, 1500); }
 async function mixSearch(q) {
   q = (q || "").trim(); const el = $("#mx-results"); if (!q) { el.innerHTML = ""; return; }
-  if (/^https?:\/\//.test(q)) { el.innerHTML = ""; return openLink(q); }
+  if (/^https?:\/\//.test(q)) { el.innerHTML = ""; return mixLink(q); }
   el.innerHTML = `<div class="mx-head"><h2>“${esc(q)}”</h2></div><div class="mx-grid">${mixSkeleton(6)}</div>`;
   let r; try { r = await api(`/api/mixsearch?q=${encodeURIComponent(q)}`); } catch (e) { el.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
   el.innerHTML = `<div class="mx-head"><h2>“${esc(q)}” <span class="count">${r.items.length}</span></h2><button class="btn small ghost" onclick="$('#mx-results').innerHTML=''; $('#mx-q').value=''">Clear</button></div>` +
     (r.items.length ? `<div class="mx-grid">${r.items.map(mixCard).join("")}</div>` : `<div class="box muted">No sets longer than 20 minutes for that. Try the DJ's name, a show, or a style like “soulful house”.</div>`);
+}
+async function mixLink(url) {
+  // a link to one mix opens the same window as a recommendation (play now, download and play, find and get the songs);
+  // a channel, playlist or podcast opens the subscribe window
+  openSheet(`<div class="grab"></div><div class="empty"><span class="spin"></span> Reading the link…</div>`);
+  let r; try { r = await api("/api/link", {method: "POST", body: JSON.stringify({url})}); }
+  catch (e) { return setPanel(`<div class="grab"></div><div class="empty">${esc(e.message)}</div>`); }
+  const e = r.entries.find(x => x.id === r.focus) || (r.entries.length === 1 ? r.entries[0] : null);
+  const host = (e?.page || "").match(/^https?:\/\/(?:www\.|m\.)?([^/]+)/)?.[1] || "";
+  const src = /youtu/.test(host) ? "YouTube" : /hearthis/.test(host) ? "Hearthis.at" : /soundcloud/.test(host) ? "SoundCloud" : /mixcloud/.test(host) ? "Mixcloud" : "";
+  if (r.kind !== "single" || r.podcast || !e || !src) { linkShow = r; return renderLink(); }
+  const id = src === "YouTube" ? "yt:" + e.id : "ln:" + e.id;
+  MIXES[id] = {id, url: e.page, title: e.title, channel: r.author || "", channel_url: r.channel_url || "", duration: e.duration || 0, views: 0,
+    thumb: src === "YouTube" ? `https://i.ytimg.com/vi/${e.id}/hqdefault.jpg` : e.cover || r.cover || "", source: src,
+    date: e.date ? Date.parse(e.date) / 1000 : 0, why: "From your link"};
+  mixSheet(id, true);
 }
 const mixItem = (m, find) => ({mix_url: m.url, title: m.title, artist: m.channel || m.source, album: m.channel || "", cover: m.thumb, cover_big: m.thumb,
   duration: m.duration, _find: find || "", _mix: m.id});
@@ -3174,6 +3194,7 @@ function vidSync() {
 }
 /* video quality: the picture is fetched on its own (the sound comes from the audio player), so it can be sharp */
 const VQ = [["", "Auto"], ["480", "480p"], ["720", "720p"], ["1080", "1080p HD"], ["1440", "1440p"], ["best", "Best (up to 4K)"]];
+const lc1 = t => t.charAt(0).toLowerCase() + t.slice(1);
 function vidSaveText() {
   const q = String((typeof settings !== "undefined" && settings && settings.video_quality) || store.get("umc_vqsave", "1080"));
   const gb = {"480": "0.4", "720": "0.9", "1080": "1.5", "1440": "3"}[q];
@@ -3892,7 +3913,7 @@ async function vidAllShow(started) {
   }
 }
 async function vidAllStart(btn) {
-  if (!confirm(`Save the video (${vidSaveText().toLowerCase()}) of every mix that doesn't have one? It runs on your server, one at a time.`)) return;
+  if (!confirm(`Save the video (${lc1(vidSaveText())}) of every mix that doesn't have one? It runs on your server, one at a time.`)) return;
   await busy(btn, async () => { const r = await api("/api/video/all", {method: "POST", body: "{}"});
     toast(r.added ? `Saving ${plural(r.added, "video")}, one at a time` : "Every mix already has its video"); });
   vidAllShow();

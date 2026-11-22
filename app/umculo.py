@@ -68,7 +68,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.4.1"
+VERSION = "3.4.2"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2451,8 +2451,14 @@ class Handler(BaseHTTPRequestHandler):
                     items = sorted(REQS.values(), key=lambda r: r["created"], reverse=True)
                 if not users.is_admin(me):
                     items = [r for r in items if r.get("user") == me["id"]]
+                if qs.get("count"):                     # the badge on the Queue tab: just the number
+                    return self.send_json({"active": sum(1 for r in items if r.get("state") not in ("ready", "failed"))})
                 names = {u["id"]: u["name"] for u in users.USERS.values()}
-                items = [{**{k: v for k, v in r.items() if k != "stop"}, "who": names.get(r.get("user"), "")} for r in items[:100]]
+                keep_t, keep_c = ("artist", "title"), ("tier", "quality", "source")
+                items = [{**{k: v for k, v in r.items() if k not in ("stop", "target", "candidate")},
+                          "target": {k: (r.get("target") or {}).get(k, "") for k in keep_t},
+                          "candidate": {k: (r.get("candidate") or {}).get(k, "") for k in keep_c},
+                          "who": names.get(r.get("user"), "")} for r in items[:100]]
                 return self.send_json({"requests": items})
             if u.path == "/api/related":
                 return self.send_json({"tracks": deezer_related(qs.get("id", [""])[0])})

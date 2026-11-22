@@ -73,5 +73,19 @@ const { chromium } = require('playwright');
     await p.evaluate(() => document.exitFullscreen?.().catch(() => {})); await p.waitForTimeout(800);
     if (await p.evaluate(() => !document.querySelector('#np-vidslot, video'))) probs.push('player not redrawn after full screen');
   } else probs.push('no full screen button');
+  // a pasted link to one mix opens the same window as a recommendation (play now, download and play, get the songs)
+  await p.evaluate(() => { closeSheet(); show('mixes'); const real = window.api; window.api = (u, o) => u === '/api/link' ? Promise.resolve({kind: 'single', podcast: false,
+    author: 'Kunye Records', channel_url: 'https://www.youtube.com/@kunye', focus: 'l9YZmIUW8Ds', cover: '',
+    entries: [{id: 'l9YZmIUW8Ds', title: 'DA CAPO DJ SET | Kunye Cape Town VI', page: 'https://www.youtube.com/watch?v=l9YZmIUW8Ds', duration: 3979, date: '2026-11-19'}]}) : real(u, o);
+    $('#mx-q').value = 'https://youtu.be/l9YZmIUW8Ds?si=x'; mixSearch($('#mx-q').value); });
+  await p.waitForTimeout(1200);
+  const sheet = await p.evaluate(() => $('#sheet').innerText);
+  if (!/Download and play/.test(sheet) || !/Get the songs too/.test(sheet) || !/Play now/.test(sheet)) probs.push('pasted mix link opens the old window: ' + sheet.slice(0, 120));
+  if (/\bgb\b/.test(sheet)) probs.push('"gb" in lower case');
+  await shot('pasted-link');
+  await p.evaluate(() => { const v = window.api; window.api = (u, o) => u === '/api/link' ? Promise.resolve({kind: 'show', podcast: true, title: 'A podcast', entries: [{id: 'e1', title: 'Ep 1', page: '', media: 'http://x/1.mp3', duration: 3000}], focus: null, subscribable: true}) : v(u, o);
+    closeSheet(); mixSearch('https://podcasts.example/feed'); });
+  await p.waitForTimeout(1000);
+  if (!/Subscribe/.test(await p.evaluate(() => $('#sheet').innerText))) probs.push('a podcast link lost its subscribe window');
   console.log(probs.length ? 'UI MIXES2 PROBLEMS\n' + probs.join('\n') : 'UI MIXES2 OK'); await b.close();
 })();

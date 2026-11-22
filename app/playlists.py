@@ -168,8 +168,26 @@ def all_cards(fresh=False):
 
 
 def _all_cards(fresh=False):
-    if not fresh and CACHE["data"] is not None and time.time() - CACHE["at"] < 8:
+    """Every playlist's card. Works out each song's quality, so it's slow with many playlists: answer from the last
+    result (if it's under 10 minutes old) straight away and work it out again in the background."""
+    age = time.time() - CACHE["at"]
+    if not fresh and CACHE["data"] is not None and age < 8:
         return CACHE["data"]
+    if not fresh and CACHE["data"] is not None and age < 600:
+        if not CACHE.get("busy"):
+            CACHE["busy"] = True
+
+            def again():
+                try:
+                    _build_cards()
+                finally:
+                    CACHE["busy"] = False
+            threading.Thread(target=again, daemon=True).start()
+        return CACHE["data"]
+    return _build_cards()
+
+
+def _build_cards():
     paths = set(files())
     with core.JOB_LOCK:
         paths |= {j["m3u"] for j in core.JOBS.values() if j["kind"] != "album"}

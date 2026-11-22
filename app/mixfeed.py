@@ -287,7 +287,7 @@ def fill_details(items, limit=150):
         except Exception as ex:  # noqa: BLE001
             core.log("mixes: no details for", m["url"], ex)
     import concurrent.futures as cf
-    with cf.ThreadPoolExecutor(max_workers=8) as pool:
+    with cf.ThreadPoolExecutor(max_workers=4) as pool:   # more at once slows the rest of the app while it runs
         list(pool.map(one, want[:limit]))
     for m in items:                                   # the same mix can be on two shelves
         d = DETAILS.get(m["id"])

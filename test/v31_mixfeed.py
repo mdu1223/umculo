@@ -90,6 +90,9 @@ check(old_ok, "a 3-year-old mix only shows on a shelf with fewer than 4 newer on
 sr = web("/api/mixsearch?q=" + urllib.parse.quote("deep house"))
 ds = [m.get("date") or 0 for m in sr.get("items", [])]
 check(ds and ds == sorted(ds, reverse=True), f"search results newest first {ds}")
+rq = web("/api/requests"); rc = web("/api/requests?count=1")
+check(isinstance(rc.get("active"), int) and set(rc) == {"active"}, f"the Queue badge asks for just a number {rc}")
+check(all(set(q["target"]) <= {"artist", "title"} and set(q["candidate"]) <= {"tier", "quality", "source"} for q in rq["requests"]), "the Queue list is slim")
 check(web("/api/chapters/find/aaaaaaaaaaaa").get("_code") == 404, "unknown song finder: not found")
 c, body = raw("/api/mixstream?u=" + urllib.parse.quote(feedurl))
 check(c == 200 and len(body) > 1000, f"a mix streams while it downloads ({c})")
