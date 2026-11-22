@@ -68,7 +68,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.3.0"
+VERSION = "3.3.1"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2048,14 +2048,15 @@ def _process_track(job, tr):
         cands = gather(target, CONFIG["batch_sources"], heard)
         picks = pick_auto(cands, cur_rank)
         below = []
-        if not CONFIG["best_effort"]:                # only your quality: wait for it rather than settle
+        fast = bool(job.get("fast"))                 # songs from a mix you're playing: now beats perfect
+        if not CONFIG["best_effort"] and not fast:   # only your quality: wait for it rather than settle
             below = [c for c in picks if not good_enough(cscore(c))]
             picks = [c for c in picks if good_enough(cscore(c))]
         if job.get("cancel"):
             tr_set(job, tr, state="cancelled")
             return
         silent = "soulseek" in CONFIG["batch_sources"] and not heard.get("soulseek")
-        if silent and not any(c["source"] == "soulseek" for c in cands) and not tr.get("silent_retry"):
+        if silent and not fast and not any(c["source"] == "soulseek" for c in cands) and not tr.get("silent_retry"):
             # Soulseek didn't answer at all (not "no copies": no answer). Try once more in an hour
             # instead of settling for a worse copy or calling the song missing.
             tr_set(job, tr, state="not_found", silent_retry=True, retry_at=time.time() + 3600, last_try=time.time(),

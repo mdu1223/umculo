@@ -36,6 +36,14 @@ Join this channel to get access to perks
 11:02 Atmos Blaq - Love Song"""
 got = g["parse_tracklist"](desc)
 check([x["title"] for x in got] == ["Drive", "Y.O.U", "Love Song"], f"tracklist without membership perks: {[x['title'] for x in got]}")
+num = g["parse_tracklist"]("""Tracklist:
+1 Daev Martian & Deniece Marz - Groove Maxing
+2 China Chameleon x Brandon Dhludhlu - Birds Sing (Buddynice Remix)
+3 Ta-Ice & Myazisto - The Goodies
+10 Sio - Somewhere""")
+check([x["artist"] for x in num] == ["Daev Martian & Deniece Marz", "China Chameleon x Brandon Dhludhlu", "Ta-Ice & Myazisto", "Sio"], f"numbered tracklist {[x['artist'] for x in num]}")
+one = g["parse_tracklist"]("3 Doors Down - Kryptonite\n50 Cent - In Da Club")
+check([x["artist"] for x in one] == ["3 Doors Down", "50 Cent"], f"names that start with a number stay {[x['artist'] for x in one]}")
 order = g["listen_order"](4415, 60)
 check(len(order) == len(set(order)) == len(range(30, 4403, 60)) and order[1] - order[0] == 180, f"listening covers the whole mix first {order[:4]}")
 # the inbox

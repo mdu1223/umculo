@@ -159,6 +159,9 @@ def page_for(row, search=True):
     return page
 
 
+INFLIGHT = {}            # (page, fmt) -> lock: the player, the song finder and the download share one lookup
+
+
 def direct(page, fmt=STREAM_FMT):
     """-> (url, headers, content type) of one progressive file for this page, cached for a while (the links expire)."""
     now = time.time()
@@ -167,8 +170,19 @@ def direct(page, fmt=STREAM_FMT):
         c = URLS.get(key)
     if c and c[2] > now:
         return c[0], c[1], c[3]
-    with core._ydl({"format": fmt}) as y:
-        info = y.extract_info(page, download=False) or {}
+    with LOCK:
+        gate = INFLIGHT.setdefault(key, threading.Lock())
+    with gate:
+        with LOCK:
+            c = URLS.get(key)
+        if c and c[2] > time.time():               # someone else just looked it up
+            return c[0], c[1], c[3]
+        with core._ydl({"format": fmt}) as y:
+            info = y.extract_info(page, download=False) or {}
+        return _remember(key, info, now)
+
+
+def _remember(key, info, now):
     url, ext = info.get("url"), info.get("ext") or ""
     if not url and info.get("requested_formats"):
         url, ext = info["requested_formats"][0].get("url"), info["requested_formats"][0].get("ext") or ext

@@ -1765,15 +1765,17 @@ async function mixGet(id, btn) {
   const m = MIXES[id]; if (!m) return;
   const sub = !!$("#mxo-sub")?.checked, find = !!$("#mxo-find")?.checked, video = !!$("#mxo-video")?.checked, get = find && !!$("#mxo-get")?.checked;
   store.set("umc_mx_sub", sub); store.set("umc_mx_find", find); store.set("umc_vidsave", video); if (find) store.set("umc_mx_get", get);
-  await busy(btn, async () => {
+  // play straight away; the download and the song finder are set up alongside (looking the page up takes a few seconds)
+  let it = pq[pi];
+  if (it?.mix_url !== m.url) { playList([mixItem(m)], 0, {id: "mix:" + m.id, name: m.channel || "Mixes"}); it = pq[pi]; }
+  m.have = true; closeSheet(); openPlayer();
+  toast(`Playing now. Downloading${find ? " and finding the songs" : ""}${video ? " (and the video)" : ""}`);
+  try {
     const r = await api("/api/mixfeed/get", {method: "POST", body: JSON.stringify({url: m.url, subscribe: sub, find, video, get})});
-    const cur = pq[pi];
-    if (cur?.mix_url === m.url) { cur._find = r.find || ""; delete chapCache[chapKey(cur)]; }      // already playing: keep going
-    else playList([mixItem(m, r.find)], 0, {id: "mix:" + m.id, name: m.channel || "Mixes"});
-    m.have = true; closeSheet(); openPlayer();
-    toast(`Downloading${find ? ", then finding the songs" : ""}${video ? " (and the video)" : ""}${r.subscribed && sub ? `. Subscribed to ${m.channel}` : ""}. Playing now`);
+    if (r.find && it) { it._find = r.find; delete chapCache["f" + r.find]; if (pq[pi] === it) { saveQueue(); renderPlayer(); } }
+    if (r.subscribed && sub) toast(`Subscribed to ${m.channel}`);
     loadMixes();
-  });
+  } catch (e) { toast("Couldn't start the download: " + e.message); }
 }
 async function mixHide(id, channel) {
   const m = MIXES[id]; if (!m) return;

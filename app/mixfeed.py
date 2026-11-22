@@ -214,7 +214,27 @@ def build(user_id, u):
     ht = keep(safe(hearthis_search, f"{st} south africa"), "Free on Hearthis.at", limit=10)
     if len(ht) >= 3:
         shelves.append({"id": "hearthis", "title": "On Hearthis.at", "sub": "DJs' own uploads, free to download", "items": ht})
+    fill_details([m for sh in shelves for m in sh["items"] if not m.get("channel")])
     return shelves
+
+
+def fill_details(items):
+    """Search results sometimes come without the channel and plays: look those few up (in parallel)."""
+    if not items or os.environ.get("UMCULO_TEST_MIXES"):
+        return
+
+    def one(m):
+        try:
+            with core._ydl({}) as y:
+                i = y.extract_info(m["url"], download=False, process=False) or {}
+            m["channel"] = i.get("channel") or i.get("uploader") or m.get("channel") or ""
+            m["channel_url"] = i.get("channel_url") or i.get("uploader_url") or m.get("channel_url") or ""
+            m["views"] = int(i.get("view_count") or m.get("views") or 0)
+        except Exception as ex:  # noqa: BLE001
+            core.log("mixes for you: no details for", m["url"], ex)
+    import concurrent.futures as cf
+    with cf.ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(one, items[:40]))
 
 
 def refresh(user_id, u):

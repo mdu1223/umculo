@@ -544,8 +544,13 @@ def parse_tracklist(text, chapters=None):
     if len(out) >= 2:
         return out
     out = []
-    for line in strip_html(text).splitlines():
+    lines = strip_html(text).splitlines()
+    nums = [int(m.group(1)) for m in (re.match(r"^\s*#?(\d{1,3})\s+\S", x) for x in lines) if m]
+    numbered = len(nums) >= 3 and {1, 2, 3} <= set(nums)          # a numbered list: "1 Artist - Title" ...
+    for line in lines:
         line = line.strip()
+        if numbered:
+            line = re.sub(r"^#?\d{1,3}\s+(?=\S)", "", line)
         if not line or len(line) > 140 or JUNK.search(line):
             continue
         t = None
@@ -598,8 +603,11 @@ def segment(path, offset, headers=None, tmpdir=None):
         if headers:
             pre += ["-headers", "".join(f"{k}: {v}\r\n" for k, v in headers.items())]
     try:
-        p = subprocess.run(["ffmpeg", "-v", "error", "-y", *pre, "-ss", str(offset), "-t", "12", "-i", path, "-ac", "1",
-                            "-ar", "16000", tmp], capture_output=True, timeout=60)
+        try:
+            p = subprocess.run(["ffmpeg", "-v", "error", "-y", *pre, "-ss", str(offset), "-t", "12", "-i", path, "-ac", "1",
+                                "-ar", "16000", tmp], capture_output=True, timeout=20 if remote else 60)
+        except subprocess.TimeoutExpired:
+            return b""
         if p.returncode != 0:
             return b""
         with open(tmp, "rb") as fh:
@@ -854,6 +862,21 @@ def want_songs(f, songs):
         core.users.LOCAL.user = before
 
 
+def unnumber(job):
+    """Songs queued before 3.3.1 from a numbered tracklist ("1 Daev Martian"): drop the numbers, try again now."""
+    ts = job.get("tracks") or []
+    nums = [t for t in ts if re.match(r"^\d{1,3}\s+\S", t.get("artist", ""))]
+    if len(nums) < 3:
+        return 0
+    for t in nums:
+        t["artist"] = re.sub(r"^\d{1,3}\s+", "", t["artist"])
+        if t.get("state") in ("not_found", "failed"):
+            t.update(state="pending", message="Trying again", silent_retry=False, retry_at=0)
+            core.BATCH.submit(core.process_track, job, t)
+    core.save_jobs()
+    return len(nums)
+
+
 def get_states(f):
     """song key -> where getting it has got to (searching, downloading, done, missing)."""
     job = core.JOBS.get(f.get("get_job") or "")
@@ -928,8 +951,9 @@ def run_find(f):
                     with lock:
                         made.append(local.rec)
                 t0 = time.time()
-                wav = segment(src, off, hdrs, tmpdir)
-                if not wav and src.startswith("http"):     # the stream wouldn't give this bit: use the download instead
+                use = f["local"] if f.get("local") and os.path.exists(f["local"]) else src
+                wav = segment(use, off, hdrs if use.startswith("http") else None, tmpdir)
+                if not wav and use.startswith("http"):     # the stream wouldn't give this bit: use the download instead
                     while f.get("fetching") and not f.get("local") and not f.get("cancel"):
                         time.sleep(2)
                     if f.get("local"):
@@ -974,8 +998,19 @@ def run_find(f):
                 want_songs(f, listed)
             fset(f, state="listening", progress=0, message=f"Listening: 0 of {len(offsets)} samples")
             try:
+                todo = list(offsets)
+
+                def worker():
+                    while not f.get("cancel") and not state["stop"]:
+                        with lock:
+                            if not todo:
+                                return
+                            here = f.get("local") and os.path.exists(f["local"])
+                            off = todo.pop(0) if here or not src.startswith("http") else todo.pop(todo.index(min(todo)))
+                        one(off)
                 with cf.ThreadPoolExecutor(max_workers=CFG["listeners"]) as pool:
-                    list(pool.map(one, offsets))
+                    for _ in range(CFG["listeners"]):
+                        pool.submit(worker)
             finally:
                 for r in made:
                     try:
@@ -1220,3 +1255,26 @@ def init(umculo):
             FIND_POOL.submit(run_find, f)
         FINDS[f["id"]] = f
     threading.Thread(target=sub_loop, daemon=True).start()
+    threading.Thread(target=_repair, daemon=True).start()
+
+
+def _repair():
+    """Once the download queue is up: fix songs queued from numbered tracklists before 3.3.1."""
+    for _ in range(120):
+        if core.BATCH is not None and core.JOBS is not None:
+            break
+        time.sleep(1)
+    for f in list(FINDS.values()):
+        ts = f.get("tracks") or []
+        if sum(1 for t in ts if re.match(r"^\d{1,3}\s+\S", t.get("artist", ""))) >= 3:
+            for t in ts:
+                t["artist"] = re.sub(r"^\d{1,3}\s+", "", t.get("artist", ""))
+            save_finds()
+        job = core.JOBS.get(f.get("get_job") or "")
+        if job:
+            try:
+                n = unnumber(job)
+                if n:
+                    log(f"song finder: took the list numbers off {core.plural(n, 'song')} in {f['title']}; trying them again")
+            except Exception as ex:  # noqa: BLE001
+                log("song finder repair:", ex)
