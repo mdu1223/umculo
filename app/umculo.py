@@ -68,7 +68,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.2.2"
+VERSION = "3.3.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -105,7 +105,7 @@ CONFIG = {
     "playlists": E("PLAYLISTS_DIR", "/data/Music/_playlists"),
     "spotify_dir": E("SPOTIFY_DIR", "/data/Music/Spotify Playlists"),
     "sab_complete": E("SAB_COMPLETE_DIR", ""),
-    "batch_workers": int(E("BATCH_WORKERS", "3")),
+    "batch_workers": int(E("BATCH_WORKERS", "6")),
     "batch_sources": [s.strip() for s in E("BATCH_SOURCES", "soulseek,usenet,soundcloud,youtube").split(",") if s.strip()],
     "usenet_max_mb": int(E("USENET_MAX_MB", "150")),
     "retry_days": int(E("RETRY_DAYS", "7")),
@@ -1899,7 +1899,7 @@ def race(job, tr, target, picks):
     def run(lane, cands):
         try:
             if lane == "stream" and len(lanes) > 1:          # give the better sources a head start
-                until = time.time() + CONFIG["stream_after_s"]
+                until = time.time() + (min(CONFIG["stream_after_s"], 45) if job.get("fast") else CONFIG["stream_after_s"])
                 while time.time() < until and not slow_done.is_set() and not stop.is_set():
                     time.sleep(1)
             for c in cands:

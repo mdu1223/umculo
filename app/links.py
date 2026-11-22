@@ -34,6 +34,8 @@ CFG = {
     "finder_pause": float(E("FINDER_PAUSE_SECONDS", "1.5")),
     "test_shazam": E("UMCULO_TEST_SHAZAM", ""),
     "auto_find": E("AUTO_FIND_SONGS", "1") == "1",
+    "auto_get": E("AUTO_GET_SONGS", "1") == "1",             # get each song from your sources the moment it's heard
+    "listeners": max(1, min(16, int(E("FINDER_LISTENERS", "8")))),   # bits of a mix listened to at once
 }
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/130.0 Safari/537.36")
@@ -42,7 +44,7 @@ CONTENT_NS = "{http://purl.org/rss/1.0/modules/content/}"
 
 SUBS, FINDS = {}, {}
 LOCK = threading.Lock()
-FIND_POOL = cf.ThreadPoolExecutor(max_workers=1)      # one song finder at a time (be polite to Shazam)
+FIND_POOL = cf.ThreadPoolExecutor(max_workers=3)      # up to three mixes listened to at once
 FETCH_POOL = cf.ThreadPoolExecutor(max_workers=3)     # but downloads don't wait for someone else's listening
 SHOWS = {}                                            # resolved links, short-lived cache for the UI
 
@@ -627,7 +629,7 @@ def save_finds():
     core._save_json("finder.json", data)
 
 
-def start_find(show, e, keep=False, auto=False, owner=None):
+def start_find(show, e, keep=False, auto=False, owner=None, get=None):
     owner = owner or core.users.me_key()
     with LOCK:                                     # the same episode only once (tapped twice, or a subscription)
         for f in FINDS.values():
@@ -635,12 +637,17 @@ def start_find(show, e, keep=False, auto=False, owner=None):
                     ((f.get("entry") or {}).get("id") == e.get("id") or f["title"] == e["title"]):
                 if keep and not f.get("keep"):
                     f["keep"] = True
+                if get and not f.get("get"):              # asked again, this time to get the songs
+                    f["get"] = True
+                    if f.get("tracks"):
+                        threading.Thread(target=want_songs, args=(f, list(f["tracks"])), daemon=True).start()
                 return f["id"]
     fid = uuid.uuid4().hex[:12]
     f = {"id": fid, "title": e["title"], "show": show["title"], "video": bool(show.get("video")), "cover": e.get("cover") or show.get("cover", ""),
          "duration": e.get("duration") or 0, "state": "queued", "progress": 0, "message": "Waiting its turn",
          "tracks": [], "created": time.time(), "keep": keep, "auto": auto, "show_data": {k: show.get(k) for k in
-         ("kind", "podcast", "title", "author", "cover", "feed", "url")}, "entry": e, "owner": owner}
+         ("kind", "podcast", "title", "author", "cover", "feed", "url")}, "entry": e, "owner": owner,
+         "get": (CFG["auto_get"] and not auto) if get is None else bool(get)}
     with LOCK:
         FINDS[fid] = f
     save_finds()
@@ -690,8 +697,6 @@ def _bg_fetch(f):
     finally:
         f["fetching"] = False
 
-
-LISTENERS = int(os.environ.get("FINDER_LISTENERS", "3"))   # samples listened to at once
 
 
 def make_req(f):
@@ -744,21 +749,25 @@ def page_tracklist(page):
                                            for c in info.get("chapters") or []]
 
 
-def start_local_find(path, title, show, duration, cover="", page=""):
+def start_local_find(path, title, show, duration, cover="", page="", get=None):
     """The song finder on a mix that's already in your library: chapters for the player."""
     owner = core.users.me_key()
     with LOCK:
         for f in FINDS.values():
             if f.get("file") == path and f["state"] != "failed" and (f.get("owner") or "admin") == owner \
                     and not (f["state"] == "done" and not f.get("tracks")):      # found nothing last time: try again
+                if get and not f.get("get"):
+                    f["get"] = True
+                    threading.Thread(target=want_songs, args=(f, list(f.get("tracks") or [])), daemon=True).start()
                 return f["id"]
     fid = uuid.uuid4().hex[:12]
-    desc, chaps = page_tracklist(page)
-    e = {"id": "local-" + fid, "title": title, "duration": duration, "description": desc, "chapters": chaps, "page": page or ""}
+    e = {"id": "local-" + fid, "title": title, "duration": duration, "description": "", "chapters": [], "page": page or "",
+         "page_pending": bool(page)}                 # its page's tracklist is read when the listening starts (no waiting here)
     f = {"id": fid, "title": title, "show": show, "cover": cover, "duration": duration, "state": "queued", "progress": 0,
          "message": "Waiting its turn", "tracks": [], "created": time.time(), "keep": False, "auto": False, "local": path,
          "file": path, "show_data": {"kind": "single", "podcast": False, "title": show, "author": show, "cover": cover,
-                                     "feed": "", "url": ""}, "entry": e, "owner": owner}
+                                     "feed": "", "url": ""}, "entry": e, "owner": owner,
+         "get": CFG["auto_get"] if get is None else bool(get)}
     with LOCK:
         FINDS[fid] = f
     save_finds()
@@ -802,6 +811,62 @@ def stop_find(fid):
     return bool(f)
 
 
+GET_LOCK = threading.Lock()
+
+
+def want_songs(f, songs):
+    """Songs heard in (or listed for) a mix that you don't have: into the mix's playlist and off to your sources now."""
+    who = core.users.person(f.get("owner") or "admin")
+    before = getattr(core.users.LOCAL, "user", None)
+    core.users.LOCAL.user = who
+    try:
+        new = []
+        with GET_LOCK:
+            asked = f.setdefault("asked", [])
+            for t in songs:
+                a, title = clean_artist(t.get("artist", "")), t.get("title", "")
+                if not a or not title:
+                    continue
+                keys = {core.song_key(a, title), "t:" + title_key(title)}
+                if keys & set(asked):
+                    continue
+                asked.extend(keys)
+                new.append({"artist": a, "title": title, "duration": 0})
+        new = [t for t in new if not owned(t["artist"], t["title"])]
+        if not new:
+            return
+        with GET_LOCK:
+            job = core.JOBS.get(f.get("get_job") or "")
+            if job:
+                core.add_tracks(job, new)
+            else:
+                name = core.safe(f["title"])
+                jid = core.new_job(name, "import", os.path.join(core.CONFIG["playlists"], name + ".m3u8"), new)
+                f["get_job"] = jid
+                j = core.JOBS.get(jid)
+                if j:                                      # you're listening to this mix now: these go first, and fast
+                    j.update(priority=20, fast=True)
+        log(f"song finder: getting {core.plural(len(new), 'song')} from {f['title']}")
+        save_finds()
+    except Exception as ex:  # noqa: BLE001
+        log("song finder: couldn't start getting the songs:", ex)
+    finally:
+        core.users.LOCAL.user = before
+
+
+def get_states(f):
+    """song key -> where getting it has got to (searching, downloading, done, missing)."""
+    job = core.JOBS.get(f.get("get_job") or "")
+    if not job:
+        return {}
+    out = {}
+    for t in list(job["tracks"]):
+        st = t.get("state", "")
+        out[core.song_key(t["artist"], t["title"])] = "done" if st in ("done", "ok", "kept", "have") or t.get("new_file") else st
+        out["t:" + title_key(t["title"])] = out[core.song_key(t["artist"], t["title"])]
+    return out
+
+
 def listen_order(dur, step):
     """Every sample spot, the whole mix first (one every few minutes), then the gaps: songs show up all through it early."""
     offs = list(range(min(30, max(dur - 12, 0)), max(dur - 12, 1), step))
@@ -819,6 +884,8 @@ def run_find(f):
     path = ""
     rec = None
     try:
+        if e.pop("page_pending", False):
+            e["description"], e["chapters"] = page_tracklist(e.get("page"))
         listed = parse_tracklist(e.get("description", ""), e.get("chapters"))
         fset(f, state="downloading", message="Getting the mix ready to listen to",
              tracks=[{**t, "from": "tracklist", "hits": 0} for t in listed])
@@ -877,26 +944,37 @@ def run_find(f):
                         log("recognition failed at", off, ":", ex)
                         with lock:
                             state["fails"] += 1
-                            if state["fails"] >= 6:
+                            fails = state["fails"]
+                            if fails >= 15:
                                 state["stop"] = f"Audio recognition stopped working ({type(ex).__name__}); showing what was found"
+                        time.sleep(min(30, 2 ** min(fails, 5)))      # Shazam asked us to slow down: back off, then carry on
+                        try:
+                            hit = local.rec(wav, off)
+                        except Exception:  # noqa: BLE001
+                            hit = None
                 with lock:
                     state["n"] += 1
                     state["secs"] += time.time() - t0
                     if hit:
                         heard.append({"t": off, "artist": hit[0], "title": hit[1]})
                         heard.sort(key=lambda x: x["t"])
+                        new_hit = {"t": off, "artist": hit[0], "title": hit[1]}
                     elif wav:
                         state["empty"] += 1
                     n = state["n"]
                     fset(f, state="listening", progress=int(n * 100 / len(offsets)),
                          message=f"Listening: {n} of {len(offsets)} samples · {len(heard)} heard so far",
                          **({"tracks": merge_tracks(listed, list(heard))} if hit else {}))
+                if hit and f.get("get"):
+                    want_songs(f, [new_hit])                 # off to your sources straight away
                 if not CFG["test_shazam"]:
                     time.sleep(CFG["finder_pause"])
 
+            if listed and f.get("get"):
+                want_songs(f, listed)
             fset(f, state="listening", progress=0, message=f"Listening: 0 of {len(offsets)} samples")
             try:
-                with cf.ThreadPoolExecutor(max_workers=max(1, LISTENERS)) as pool:
+                with cf.ThreadPoolExecutor(max_workers=CFG["listeners"]) as pool:
                     list(pool.map(one, offsets))
             finally:
                 for r in made:
@@ -906,7 +984,7 @@ def run_find(f):
                         pass
             rec_error = state["stop"] or ""
             log(f"song finder: {f['title']}: {len(heard)} heard in {state['n']} samples ({state['empty']} not recognised), "
-                f"{state['secs'] / max(state['n'], 1):.1f} s a sample, {LISTENERS} at a time")
+                f"{state['secs'] / max(state['n'], 1):.1f} s a sample, {CFG['listeners']} at a time")
             if state["n"] >= 10 and not heard and not rec_error:
                 rec_error = "Shazam didn't recognise any of this mix (often unreleased edits or very long blends)"
         rec = None
@@ -1025,7 +1103,10 @@ def view_find(f, full=False):
     out = {k: f.get(k) for k in keys}
     out["count"] = len(f.get("tracks") or [])
     if full:
-        out["tracks"] = f.get("tracks") or []
+        got = get_states(f) if f.get("get_job") else {}
+        out["tracks"] = [{**t, "getting": got.get(core.song_key(clean_artist(t["artist"]), t["title"])) or got.get("t:" + title_key(t["title"])) or ""}
+                         if got else t for t in f.get("tracks") or []]
+        out["get"] = bool(f.get("get"))
     return out
 
 
@@ -1105,7 +1186,8 @@ def recognition_available():
 
 
 def settings_view():
-    return {"sub_hours": CFG["sub_hours"], "finder_step": CFG["finder_step"], "auto_find": CFG["auto_find"]}
+    return {"sub_hours": CFG["sub_hours"], "finder_step": CFG["finder_step"], "auto_find": CFG["auto_find"],
+            "auto_get": CFG["auto_get"], "finder_listeners": CFG["listeners"]}
 
 
 def apply_setting(k, v):
@@ -1114,6 +1196,12 @@ def apply_setting(k, v):
         return True
     if k == "auto_find":
         CFG["auto_find"] = bool(v)
+        return True
+    if k == "auto_get":
+        CFG["auto_get"] = bool(v)
+        return True
+    if k == "finder_listeners":
+        CFG["listeners"] = max(1, min(16, int(v)))
         return True
     if k == "finder_step":
         CFG["finder_step"] = max(20, int(v))

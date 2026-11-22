@@ -57,5 +57,18 @@ const { chromium } = require('playwright');
     if (box.t < 0 || box.b > 900 || box.l < 0 || box.r > 1440 || box.n < 5) probs.push('quality menu off screen or cut ' + JSON.stringify(box));
     await shot('quality-menu');
   } else probs.push('no quality button on the mix video');
+  // full screen stays full screen while songs keep arriving (the player redraws every few seconds)
+  await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+  const fsb = await p.$('button[aria-label="Full screen"]');
+  if (fsb) {
+    await fsb.click(); await p.waitForTimeout(800);
+    const on1 = await p.evaluate(() => !!document.fullscreenElement);
+    await p.evaluate(() => { for (let i = 0; i < 5; i++) renderPlayer(); }); await p.waitForTimeout(3000);
+    const on2 = await p.evaluate(() => document.fullscreenElement === vidEl);
+    if (on1 && !on2) probs.push('full screen closed by itself');
+    if (!on1) console.log('(full screen not available in this browser: skipped)');
+    await p.evaluate(() => document.exitFullscreen?.().catch(() => {})); await p.waitForTimeout(800);
+    if (await p.evaluate(() => !document.querySelector('#np-vidslot, video'))) probs.push('player not redrawn after full screen');
+  } else probs.push('no full screen button');
   console.log(probs.length ? 'UI MIXES2 PROBLEMS\n' + probs.join('\n') : 'UI MIXES2 OK'); await b.close();
 })();

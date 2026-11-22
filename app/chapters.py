@@ -33,15 +33,18 @@ def view(r):
 
 def find_view(f):
     tracks = []
+    got = core.links.get_states(f) if f.get("get_job") else {}
     for t in f.get("tracks") or []:
         a, owned = t.get("artist", ""), t.get("owned") or ""
         clean = core.links.clean_artist(a)
         if clean != a:                     # found before 2.9.5: "4..Artist" -> "Artist", and look again
             a, owned = clean, core.links.owned(clean, t.get("title", "")) or ""
-        tracks.append({"t": t.get("t"), "artist": a, "title": t.get("title", ""), "owned": owned})
+        g = got.get(core.song_key(a, t.get("title", ""))) or got.get("t:" + core.links.title_key(t.get("title", ""))) or "" if got else ""
+        tracks.append({"t": t.get("t"), "artist": a, "title": t.get("title", ""), "owned": owned, "getting": g})
     tracks.sort(key=lambda t: (t["t"] is None, t["t"] or 0))
     return {"state": f["state"], "progress": f.get("progress", 0), "message": f.get("message", ""), "find": f["id"],
-            "tracks": tracks, "file": bool(f.get("file"))}
+            "tracks": tracks, "file": bool(f.get("file")), "get": bool(f.get("get")),
+            "getting": sum(1 for t in tracks if t["getting"] in ("pending", "searching", "downloading", "filing", "scanning"))}
 
 
 def wanted():
@@ -115,7 +118,7 @@ def handle_post(path, b):
         page = core.video.page_for(r) if core.video.is_mix(r) else ""   # where it came from: its tracklist is often there
     except Exception:  # noqa: BLE001
         pass
-    fid = core.links.start_local_find(r["path"], r["title"], show, int(r["duration"] or 0), page=page)
+    fid = core.links.start_local_find(r["path"], r["title"], show, int(r["duration"] or 0), page=page, get=(b or {}).get("get"))
     return {"ok": True, "find": fid}
 
 

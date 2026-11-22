@@ -101,7 +101,8 @@ Most settings live in the app (**Settings**). These are set in `docker-compose.y
 | `COOK_MIN_SECONDS` | `45` | Shortest song a Cook will include (skips intros and skits) |
 | `HA_URL`, `HA_TOKEN`, `HA_MEDIA_BASE` | | Home Assistant, for playing on speakers (or set it up in the app); `HA_MEDIA_BASE` is the address speakers use to reach Umculo, e.g. `http://192.168.0.2:8095` |
 | `WAHA_URL`, `WAHA_KEY`, `WAHA_SESSION` | | WhatsApp messages through WAHA (or set it up in the app) |
-| `FINDER_LISTENERS` | `3` | How many bits of a mix the song finder listens to at once (higher is faster; Shazam may slow down if it's too high) |
+| `FINDER_LISTENERS` | `8` | How many bits of a mix the song finder listens to at once, 1 to 16 (also in Settings → Song finder speed). It slows down by itself if Shazam pushes back |
+| `AUTO_GET_SONGS` | `1` | Get each song the song finder hears (and you don't have) from your sources straight away |
 | `GIGS_APP_ID` | | Your Bandsintown app ID, for gigs near you (Bandsintown no longer answers without one) |
 | `TZ` | `Africa/Johannesburg` | Time zone for the weekly note (alarms keep the time zone of the phone that set them) |
 | `SUPPORT_GITHUB`, `SUPPORT_KOFI` | project links | Donation links in Settings (blank to hide) |

@@ -594,6 +594,7 @@ nav.tabs button{font-size:11px}
 .vq-menu .vq-h{font-size:12px;font-weight:800;opacity:.7;padding:6px 10px}
 .vq-menu button{display:block;width:100%;text-align:left;border:0;background:none;color:#fff;padding:9px 10px;border-radius:9px;font-size:14px;font-weight:600}
 .vq-menu button:hover{background:rgba(255,255,255,.08)}.vq-menu button.on{color:var(--accent)}.vq-menu .muted{color:rgba(255,255,255,.55);font-weight:500}
+.chap .getting{color:var(--accent);font-weight:700}.chap .getting.not_found,.chap .getting.failed,.chap .getting.cancelled{color:var(--quiet);font-weight:500}
 .qrow.auto{position:relative}.qrow.auto .meta .t::before{content:"Autoplay · ";color:var(--accent);font-weight:800}
 .shelf-wrap{position:relative}.sh-arr{display:none}
 @media (min-width:1000px){
@@ -1754,6 +1755,7 @@ function mixOpts(id) {
     <span class="switch"><input type="checkbox" id="mxo-${k}" ${on ? "checked" : ""}><span></span></span></label>`;
   el.innerHTML = `${m.channel_url ? sw("sub", `Subscribe to ${esc(m.channel)}`, "New mixes from this channel download by themselves", store.get("umc_mx_sub", false)) : ""}
     ${sw("find", "Find the songs", "Umculo listens and lists every song, with its time", store.get("umc_mx_find", true))}
+    ${sw("get", "Get the songs too", "Each song you don't have starts downloading the moment it's heard, into a playlist for this mix", store.get("umc_mx_get", true))}
     ${sw("video", "Save the video", vidSaveText() + ". You can watch it while it plays either way", store.get("umc_vidsave", false))}
     <button class="btn" style="width:100%;margin-top:10px" onclick="mixGet('${id}', this)">${icon("dl", 18)} Download and play</button>
     <div class="muted" style="font-size:12px;margin-top:6px;text-align:center">It starts playing right away while the audio downloads.</div>`;
@@ -1761,10 +1763,10 @@ function mixOpts(id) {
 }
 async function mixGet(id, btn) {
   const m = MIXES[id]; if (!m) return;
-  const sub = !!$("#mxo-sub")?.checked, find = !!$("#mxo-find")?.checked, video = !!$("#mxo-video")?.checked;
-  store.set("umc_mx_sub", sub); store.set("umc_mx_find", find); store.set("umc_vidsave", video);
+  const sub = !!$("#mxo-sub")?.checked, find = !!$("#mxo-find")?.checked, video = !!$("#mxo-video")?.checked, get = find && !!$("#mxo-get")?.checked;
+  store.set("umc_mx_sub", sub); store.set("umc_mx_find", find); store.set("umc_vidsave", video); if (find) store.set("umc_mx_get", get);
   await busy(btn, async () => {
-    const r = await api("/api/mixfeed/get", {method: "POST", body: JSON.stringify({url: m.url, subscribe: sub, find, video})});
+    const r = await api("/api/mixfeed/get", {method: "POST", body: JSON.stringify({url: m.url, subscribe: sub, find, video, get})});
     const cur = pq[pi];
     if (cur?.mix_url === m.url) { cur._find = r.find || ""; delete chapCache[chapKey(cur)]; }      // already playing: keep going
     else playList([mixItem(m, r.find)], 0, {id: "mix:" + m.id, name: m.channel || "Mixes"});
@@ -2867,7 +2869,9 @@ function tintFrom(it) {                       // a soft background from the cove
     it._tint = `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`; if (pq[pi] === it) set(it._tint); } catch (e) {} };
   im.src = c;
 }
+const vidIsFull = () => document.fullscreenElement === vidEl || document.webkitFullscreenElement === vidEl || !!vidEl.webkitDisplayingFullscreen;
 function renderPlayer() {
+  if (vidIsFull()) { renderPlayer.later = true; return; }      // redraw once they come back out
   const it = pq[pi], p = $("#player"); if (!it || !(desk() ? dockShown() : $("#sheet").classList.contains("open"))) return;
   const pc = p.duration ? p.currentTime * 100 / p.duration : 0, up = pq.slice(pi + 1), lyr = npView === "lyrics";
   const qcls = it.q ? (it.q.tier === "lossless" ? "lossless" : qTier(it.q.quality)) : "";
@@ -3019,7 +3023,7 @@ async function loadChap(it) {
     const nw = r.tracks.filter(t => !was.tracks.some(o => o.title === t.title && o.artist === t.artist));
     if (nw.length === 1) toast(`Heard: ${nw[0].artist} – ${nw[0].title}`); else if (nw.length) toast(`${plural(nw.length, "more song")} found in this mix`);
   }
-  if (["queued", "downloading", "listening"].includes(r.state)) setTimeout(() => { if (pq[pi] === it) loadChap(it); }, it._find ? 4000 : 5000);
+  if (["queued", "downloading", "listening"].includes(r.state) || r.getting) setTimeout(() => { if (pq[pi] === it) loadChap(it); }, r.state === "listening" ? 2500 : 5000);
   if (pq[pi] === it && npOpen() && npView !== "lyrics") renderPlayer();
 }
 function chapAt(c, t) { let k = -1; (c?.tracks || []).forEach((x, i) => { if (x.t != null && x.t <= t + 1) k = i; }); return k; }
@@ -3044,11 +3048,13 @@ function chapHTML(it) {
     <button class="btn small ghost" style="margin-top:8px" onclick="findChapters()">Try again</button></div>`;
   const k = chapAt(c, $("#player").currentTime);
   const missing = c.tracks.filter(x => !x.owned && x.artist).length;
-  return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2>${missing && c.find ? `<button class="btn small ghost" onclick="getMixSongs('${c.find}', this)" title="Make a playlist of this mix's songs and get the ones you don't have from your sources">Get the ${missing} missing</button>` : ""}</div>` + c.tracks.map((x, i) => chapRow(x, i, k)).join("");
+  return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2>${missing && c.find && !c.get ? `<button class="btn small ghost" onclick="getMixSongs('${c.find}', this)" title="Make a playlist of this mix's songs and get the ones you don't have from your sources">Get the ${missing} missing</button>` : ""}</div>` + c.tracks.map((x, i) => chapRow(x, i, k)).join("");
 }
+const GETTING = {pending: "queued", searching: "searching…", downloading: "downloading…", filing: "downloading…", scanning: "downloading…",
+  not_found: "not found on your sources", failed: "couldn't get it", cancelled: "stopped"};
 function chapRow(x, i, k) {
   return `<div class="qrow chap${i === k ? " on" : ""}" data-ci="${i}" ${x.t != null ? `onclick="chapSeek(${x.t})"` : ""}>
-      <span class="time">${x.t != null ? hms(x.t) : "–"}</span><div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}${x.owned ? ` · <span class="own">in your library</span>` : ""}</div></div>
+      <span class="time">${x.t != null ? hms(x.t) : "–"}</span><div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}${x.owned || x.getting === "done" ? ` · <span class="own">in your library</span>` : x.getting ? ` · <span class="getting ${x.getting}">${GETTING[x.getting] || "getting it"}</span>` : ""}</div></div>
       <button class="icon sm" onclick="event.stopPropagation(); findMenu(${esc(JSON.stringify(x.artist))}, ${esc(JSON.stringify(x.title))})" aria-label="Find this song" title="Find this song">${icon("more", 18)}</button></div>`;
 }
 function renderMarks() {                     // a tick on the seek bar for every song in the mix (hover for its name, click to jump)
@@ -3187,6 +3193,10 @@ function toggleTheater() {
   if (on && !videoOn) toggleVideo(); else renderPlayer();
 }
 function toggleVideo() { videoOn = !videoOn; store.set("umc_video", videoOn); if (!videoOn) vidEl.pause(); renderPlayer(); }
+for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) document.addEventListener(ev, () => {
+  if (!vidIsFull() && renderPlayer.later) { renderPlayer.later = false; renderPlayer(); }
+});
+vidEl.addEventListener("webkitendfullscreen", () => { if (renderPlayer.later) { renderPlayer.later = false; renderPlayer(); } });
 function vidFull() {
   const f = vidEl.requestFullscreen || vidEl.webkitRequestFullscreen;
   if (f) f.call(vidEl).catch?.(() => {}); else if (vidEl.webkitEnterFullscreen) vidEl.webkitEnterFullscreen();
@@ -4177,6 +4187,10 @@ function renderSettings() {
       ${num("weekly_size", "Songs in the weekly mix", "")}
       <div class="set-row"><span>ListenBrainz username (optional)</span><input class="field" id="set-lb_user" value="${esc(s.lb_user || "")}" style="width:150px"></div>
       <label class="opt"><input type="checkbox" id="set-auto_find" ${s.auto_find ? "checked" : ""}> Find the songs in every new episode of your subscriptions</label>
+      <label class="opt"><input type="checkbox" id="set-auto_get" ${s.auto_get ? "checked" : ""}> Get each song from your sources as soon as it's heard (mixes you download or ask to find)</label>
+      <div class="set-row"><span>Song finder speed<br><span class="muted" style="font-size:12px">Bits of the mix listened to at once. If Shazam pushes back, Umculo slows down by itself.</span></span>
+        <span><select class="field" id="set-finder_listeners">${[[4, "Steady (4)"], [8, "Fast (8)"], [12, "Faster (12)"], [16, "Fastest (16)"]].map(([v, l]) =>
+          `<option value="${v}" ${+s.finder_listeners === v ? "selected" : ""}>${l}</option>`).join("")}${[4, 8, 12, 16].includes(+s.finder_listeners) ? "" : `<option selected value="${s.finder_listeners}">${s.finder_listeners}</option>`}</select></span></div>
       <label class="opt"><input type="checkbox" id="set-lyrics_auto" ${s.lyrics_auto ? "checked" : ""}> Add lyrics to new downloads</label>
     </div>
     <h2>Notifications</h2>
@@ -4473,7 +4487,7 @@ async function saveSettings() {
     slsk_stall_s: v("slsk_stall_s") * 60, stream_after_s: v("stream_after_s") * 60, retry_days: v("retry_days"),
     sub_hours: v("sub_hours"), ntfy: $("#set-ntfy").value.trim(),
     weekly_mode: document.querySelector('input[name=weekly_mode]:checked')?.value, weekly_size: v("weekly_size"),
-    lb_user: $("#set-lb_user").value.trim(), auto_find: $("#set-auto_find").checked, lyrics_auto: $("#set-lyrics_auto").checked,
+    lb_user: $("#set-lb_user").value.trim(), auto_find: $("#set-auto_find").checked, auto_get: $("#set-auto_get")?.checked, finder_listeners: +($("#set-finder_listeners")?.value || 8), lyrics_auto: $("#set-lyrics_auto").checked,
     best_effort: $("#set-best_effort").checked,
     stream_quality: document.querySelector('input[name=stream_quality]:checked')?.value, stream_wait_s: v("stream_wait_s"),
     internet_kbps: $("#set-internet_kbps")?.value};

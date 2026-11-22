@@ -381,7 +381,7 @@ def get(b):
     video = bool(b.get("video"))
     out = {"show": show["id"], "subscribed": bool(show.get("subscribed"))}
     if b.get("find", True):                         # into the library first, then the song finder listens to it
-        out["find"] = core.links.start_find({**show, "video": video}, e, keep=True)
+        out["find"] = core.links.start_find({**show, "video": video}, e, keep=True, get=b.get("get"))
     else:
         out["request"] = core.links.get_entry(show, e, video)
     if b.get("subscribe") and show.get("subscribable") and not show.get("subscribed"):

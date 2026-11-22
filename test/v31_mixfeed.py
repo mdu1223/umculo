@@ -63,6 +63,21 @@ for _ in range(120):
     time.sleep(0.5)
 check(st.get("state") == "done" and st.get("file"), f"downloaded and listened {st}")
 check(any(t["artist"] == "Kwesta" and t["title"] == "Ngud" for t in st.get("tracks", [])), f"its songs are listed {st.get('tracks')}")
+# songs you don't have went off to your sources as they were heard (Kwesta - Ngud is in the library already)
+check(st.get("get") is True, f"getting the songs is on by default {st.get('get')}")
+gt = {}
+for _ in range(60):
+    gt = web(f"/api/chapters/find/{fid}")
+    if any(t.get("getting") for t in gt.get("tracks", [])): break
+    time.sleep(0.5)
+missing = [t for t in gt.get("tracks", []) if not t.get("owned")]
+check(missing and all(t.get("getting") for t in missing), f"each missing song is being got {[(t['title'], t.get('getting')) for t in gt.get('tracks', [])]}")
+check(not any(t.get("getting") for t in gt.get("tracks", []) if t.get("owned")), "songs you have aren't got again")
+jl = web("/api/playlists").get("jobs", [])
+check(any(j.get("name") == "Deep Sessions 042" for j in jl), f"a playlist for the mix's songs {[j.get('name') for j in jl][:5]}")
+check(web("/api/settings").get("finder_listeners") == 8 and web("/api/settings").get("auto_get") is True, "song finder speed and auto-get in settings")
+web("/api/settings", "POST", {"finder_listeners": 12}); check(web("/api/settings").get("finder_listeners") == 12, "song finder speed can be changed")
+web("/api/settings", "POST", {"finder_listeners": 8})
 check(web("/api/chapters/find/aaaaaaaaaaaa").get("_code") == 404, "unknown song finder: not found")
 c, body = raw("/api/mixstream?u=" + urllib.parse.quote(feedurl))
 check(c == 200 and len(body) > 1000, f"a mix streams while it downloads ({c})")
