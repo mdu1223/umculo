@@ -216,6 +216,7 @@ header{padding-top:calc(14px + env(safe-area-inset-top))}
 .np-acts button.have{color:var(--lossless);opacity:.9;cursor:default}
 .np-up{text-align:left;margin-top:6px}
 .np-uph{display:flex;align-items:center;justify-content:space-between}
+.chap-msg{display:flex;align-items:center;gap:6px;font-size:12px;margin:-4px 4px 6px;line-height:1.35}
 .np-uph .link{border:0;background:none;color:var(--accent);font-weight:700;font-size:13px;margin:16px 4px 6px;cursor:pointer}
 .q-art{width:44px;height:44px;flex:none;border-radius:8px}.q-art .ph{font-size:15px}
 .icon.sm{width:32px;height:32px;border:0;background:none;color:var(--quiet);flex:none}
@@ -3026,6 +3027,12 @@ async function loadChap(it) {
     if (nw.length === 1) toast(`Heard: ${nw[0].artist} – ${nw[0].title}`); else if (nw.length) toast(`${plural(nw.length, "more song")} found in this mix`);
   }
   if (["queued", "downloading", "listening"].includes(r.state) || r.getting) setTimeout(() => { if (pq[pi] === it) loadChap(it); }, r.state === "listening" ? 2500 : 5000);
+  // only redraw the panel when the songs change; the status line and bar update where they are
+  const sig = c => c && JSON.stringify([c.state, (c.tracks || []).map(t => [t.t, t.artist, t.title, t.owned, t.getting]), c.file]);
+  if (was && sig(was) === sig(r) && $("#chap-msg")) {
+    $("#chap-msg").textContent = r.message || "Listening"; const b = $("#chap-bar"); if (b) b.style.width = Math.max(3, r.progress || 0) + "%";
+    return;
+  }
   if (pq[pi] === it && npOpen() && npView !== "lyrics") renderPlayer();
 }
 function chapAt(c, t) { let k = -1; (c?.tracks || []).forEach((x, i) => { if (x.t != null && x.t <= t + 1) k = i; }); return k; }
@@ -3038,8 +3045,9 @@ function chapHTML(it) {
   const c = chapFor(it); if (!c || c.state === "loading") return "";
   if (it._find && ["queued", "downloading", "listening"].includes(c.state) && c.tracks.length) {      // songs as they're heard
     const k = chapAt(c, $("#player").currentTime);
-    return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2><span class="muted" style="font-size:12px"><span class="spin"></span>${esc(c.message || "Listening")}</span></div>
-      <div class="bar" style="margin:0 0 8px"><i style="width:${Math.max(3, c.progress || 0)}%"></i></div>` + c.tracks.map((x, i) => chapRow(x, i, k)).join("");
+    return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2></div>
+      <div class="chap-msg muted"><span class="spin"></span><span id="chap-msg">${esc(c.message || "Listening")}</span></div>
+      <div class="bar" style="margin:0 0 8px"><i id="chap-bar" style="width:${Math.max(3, c.progress || 0)}%"></i></div>` + c.tracks.map((x, i) => chapRow(x, i, k)).join("");
   }
   if (c.state === "none") return c.can_find === false ? "" : `<div class="chapbox"><div class="t">Which songs are in this mix?</div>
     <div class="muted">Umculo listens to the mix on your server and lists every song with its time, so you can see what's playing and jump to it.</div>
