@@ -116,17 +116,33 @@ def set_login(username, password):
     return {"set": True, "username": username}
 
 
+def login_needed():
+    """Has slskd got its web login switched on? (Off: every request counts as its admin, no login needed.)"""
+    try:
+        r = core.http("GET", f"{core.CONFIG['slskd']}/api/v0/session/enabled", timeout=10, retries=0)
+        return r is not False and str(r).lower() != "false"
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def can_restart():
+    return bool(slskd_login()) or not login_needed()
+
+
 def restart_slskd(why):
-    """Sign in to slskd as its admin and ask it to restart itself. -> a message for people."""
-    login = slskd_login()
-    if not login:
-        raise LookupError("Add slskd's web login (Settings > Connectors > Soulseek) so Umculo can restart it")
+    """Ask slskd to restart itself: straight away when its web login is off, else signed in as its admin."""
     base = core.CONFIG["slskd"]
-    r = core.http("POST", f"{base}/api/v0/session", {"username": login[0], "password": login[1]}, timeout=15, retries=0) or {}
-    token = r.get("token") or r.get("Token")
-    if not token:
-        raise LookupError("slskd didn't accept its saved login: enter it again in Settings > Connectors > Soulseek")
-    core.http("PUT", f"{base}/api/v0/application", {}, {"Authorization": f"Bearer {token}"}, timeout=20, retries=0)
+    if not login_needed():
+        core.http("PUT", f"{base}/api/v0/application", {}, core.slskd_headers(), timeout=20, retries=0)
+    else:
+        login = slskd_login()
+        if not login:
+            raise LookupError("Add slskd's web login (Settings > Connectors > Soulseek) so Umculo can restart it")
+        r = core.http("POST", f"{base}/api/v0/session", {"username": login[0], "password": login[1]}, timeout=15, retries=0) or {}
+        token = r.get("token") or r.get("Token")
+        if not token:
+            raise LookupError("slskd didn't accept its saved login: enter it again in Settings > Connectors > Soulseek")
+        core.http("PUT", f"{base}/api/v0/application", {}, {"Authorization": f"Bearer {token}"}, timeout=20, retries=0)
     SLSK_WATCH.update(restarted_at=time.time(), broken=False, canary_at=0)
     core.SLSK.update(empty_streak=0, pause_until=0)
     core.log(f"Soulseek: restarted slskd ({why})")
@@ -165,12 +181,12 @@ def slsk_watch():
                             core.SLSK["empty_streak"] = 0
                         else:
                             SLSK_WATCH["broken"] = True
-                            if slskd_login() and now - SLSK_WATCH.get("restarted_at", 0) > RESTART_EVERY:
+                            if can_restart() and now - SLSK_WATCH.get("restarted_at", 0) > RESTART_EVERY:
                                 try:
                                     restart_slskd("connected, but even a search for a well-known song found nothing")
                                 except Exception as ex:  # noqa: BLE001
                                     core.log("Soulseek: couldn't restart slskd:", ex)
-                            elif not slskd_login():
+                            elif not can_restart():
                                 core.log("Soulseek: connected but finding nothing; restart slskd "
                                          "(add its web login in Settings so Umculo can do it for you)")
                 else:
@@ -209,7 +225,7 @@ def c_soulseek():
     st = core.http("GET", f"{core.CONFIG['slskd']}/api/v0/server", headers=core.slskd_headers(), timeout=10) or {}
     state = st.get("state") or ""
     if SLSK_WATCH.get("broken") and ("LoggedIn" in state or "Logged In" in state):
-        can = " (Umculo will restart it)" if slskd_login() else ": press Restart Soulseek"
+        can = " (Umculo will restart it)" if can_restart() else ": add slskd's login so Umculo can restart it"
         return "down", f"Connected as {st.get('username', '')}, but searches find nothing{can}"
     s = core.SLSK
     extra = f" · {s['searches']} searches, {s['empty']} unanswered"
@@ -421,7 +437,7 @@ def handle_get(path, qs):
         if not core.users.is_admin():
             raise PermissionError("Only the admin can see this")
         lg = slskd_login()
-        return {"set": bool(lg), "username": lg[0] if lg else "",
+        return {"set": bool(lg), "username": lg[0] if lg else "", "needed": login_needed(),
                 "restarted_at": SLSK_WATCH.get("restarted_at", 0), "broken": bool(SLSK_WATCH.get("broken"))}
     if path == "/api/status/summary":
         with LOCK:

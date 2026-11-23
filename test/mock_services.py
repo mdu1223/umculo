@@ -193,7 +193,7 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         d = json.loads(self.rfile.read(n) or b"{}")
         if self.path == "/api/v0/application":            # slskd: restart (its admin only)
-            if self.headers.get("Authorization") != "Bearer JWT-OK":
+            if STATE.get("slsk_auth", True) and self.headers.get("Authorization") != "Bearer JWT-OK":
                 self.send_response(401); self.send_header("Content-Length", "0"); self.end_headers()
                 return
             STATE["slsk_restarts"] = STATE.get("slsk_restarts", 0) + 1
@@ -227,6 +227,11 @@ class H(BaseHTTPRequestHandler):
             return self.j({"ok": True})
         if p == "/test/slsk-state":
             return self.j({"state": STATE["slsk"], "puts": STATE["slsk_puts"], "restarts": STATE.get("slsk_restarts", 0)})
+        if p == "/api/v0/session/enabled":
+            return self.j(STATE.get("slsk_auth", True))
+        if p == "/test/slsk-noauth":
+            STATE["slsk_auth"] = False
+            return self.j({"ok": True})
         if p == "/test/slsk-broken":
             STATE["slsk_broken"] = True
             return self.j({"ok": True})

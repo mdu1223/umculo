@@ -172,5 +172,14 @@ before = st["restarts"]
 r = web("/api/slskd/restart", "POST")
 st = json.loads(urllib.request.urlopen(MK + "/test/slsk-state").read())
 check(r.get("ok") and st["restarts"] == before + 1, f"the Restart Soulseek button restarts it {r} {st}")
+# slskd with its web login switched off: restarted without one
+web("/api/slskd/login", "POST", {"username": "", "password": ""})
+urllib.request.urlopen(MK + "/test/slsk-noauth").read()
+lg = web("/api/slskd/login")
+check(lg.get("needed") is False and not lg.get("set"), f"slskd without a web login needs none {lg}")
+before = json.loads(urllib.request.urlopen(MK + "/test/slsk-state").read())["restarts"]
+r = web("/api/slskd/restart", "POST")
+st = json.loads(urllib.request.urlopen(MK + "/test/slsk-state").read())
+check(r.get("ok") and st["restarts"] == before + 1, f"and the button restarts it {r} {st}")
 print(f"V30 OK {n}" if not bad else f"V30 FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)

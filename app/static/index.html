@@ -4376,13 +4376,14 @@ async function slskExtra() {                     // Soulseek: restart slskd from
   const el = $("#slsk-extra"); if (!el) return;
   let r; try { r = await api("/api/slskd/login"); } catch (e) { return; }
   el.innerHTML = `<h3 style="margin:14px 0 4px">When Soulseek gets stuck</h3>
-    <div class="muted">${r.set ? `Umculo signs in to slskd as <b>${esc(r.username)}</b> to restart it, by itself when it's connected but finding nothing (at most every two hours), or when you press the button.`
+    <div class="muted">${!r.needed ? `slskd's web login is switched off, so Umculo can restart it without one: by itself when it's connected but finding nothing (at most every two hours), or when you press the button.`
+      : r.set ? `Umculo signs in to slskd as <b>${esc(r.username)}</b> to restart it, by itself when it's connected but finding nothing (at most every two hours), or when you press the button.`
       : "slskd sometimes stays connected but finds nothing until it's restarted. Enter slskd's own web login (the one for its web page) and Umculo can restart it: by itself when that happens, or when you press the button."}
       ${r.restarted_at ? ` Last restarted ${ago(r.restarted_at)}.` : ""}</div>
-    <div class="row-btns" style="margin-top:8px"><button class="btn small" onclick="slskRestart(this)" ${r.set ? "" : "disabled"}>Restart Soulseek</button></div>
-    <div style="margin-top:10px"><input class="field" id="slsk-u" placeholder="slskd username" autocomplete="off" value="${esc(r.username || "")}">
+    <div class="row-btns" style="margin-top:8px"><button class="btn small" onclick="slskRestart(this)" ${r.set || !r.needed ? "" : "disabled"}>Restart Soulseek</button></div>
+    ${!r.needed ? "" : `<div style="margin-top:10px"><input class="field" id="slsk-u" placeholder="slskd username" autocomplete="off" value="${esc(r.username || "")}">
       <input class="field" id="slsk-p" type="password" placeholder="${r.set ? "slskd password (saved)" : "slskd password"}" autocomplete="new-password" style="margin-top:6px">
-      <div class="row-btns"><button class="btn small ghost" onclick="slskLogin(this)">${r.set ? "Change login" : "Save login"}</button></div></div>`;
+      <div class="row-btns"><button class="btn small ghost" onclick="slskLogin(this)">${r.set ? "Change login" : "Save login"}</button></div></div>`}`;
 }
 async function slskLogin(btn) {
   btn.disabled = true;
