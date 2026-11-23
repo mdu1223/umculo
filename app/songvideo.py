@@ -22,6 +22,7 @@ import time
 core = None
 LOOKING = {}             # path -> True while being looked up
 POOL = cf.ThreadPoolExecutor(max_workers=2)
+MATCHER = 2              # raise when finding videos gets better: songs that found none are looked up again
 FPS = 20                 # loudness changes compared 20 times a second (50 ms: in step to the eye)
 RATE = 4000
 BAD = re.compile(r"\b(lyrics?|lyric video|audio|visuali[sz]er|live|cover|reaction|karaoke|instrumental|sped up|slowed|"
@@ -37,8 +38,15 @@ def main_artist(a):
     return re.split(r"\s*(?:,|&|\bfeat\.?|\bft\.?|\bx\b|\band\b|\bwith\b)\s*", a or "", flags=re.I)[0].strip()
 
 
-def core_title(t):
-    return re.sub(r"\s*[\(\[][^\)\]]*(feat|ft\.|with|prod|remaster|version|edit|mix)[^\)\]]*[\)\]]", "", t or "", flags=re.I).strip()
+def core_title(t, artist=""):
+    """The song's name on its own: no "(feat. ...)", "ft. ...", "(Explicit)", "Artist - " in front."""
+    t = t or ""
+    a = main_artist(artist)
+    if a and re.match(re.escape(a) + r"\s*[-–]\s*", t, re.I):                 # "J. Cole - Power Trip"
+        t = re.sub(re.escape(a) + r"\s*[-–]\s*", "", t, count=1, flags=re.I)
+    t = re.sub(r"\s*[\(\[][^\)\]]*(feat|ft\.|with|prod|remaster|version|edit|mix|explicit|clean)[^\)\]]*[\)\]]", "", t, flags=re.I)
+    t = re.sub(r"\s+(feat\.?|ft\.?|featuring)\s.*$", "", t, flags=re.I)        # "LOYALTY. FEAT. RIHANNA."
+    return t.strip(" .-")
 
 
 def is_official(e, artist, title):
@@ -48,7 +56,7 @@ def is_official(e, artist, title):
     bad = BAD.search(vt)
     if bad and not (want_remix and bad.group(0).lower() in title.lower()):
         return False
-    if norm(core_title(title)) not in norm(vt):
+    if norm(core_title(title, artist)) not in norm(vt):
         return False
     a, c = norm(main_artist(artist)), norm(ch)
     by_artist = bool(a) and (a.replace(" ", "") in c.replace(" ", "") or c.endswith("vevo") and a.replace(" ", "") in c.replace(" ", ""))
@@ -57,7 +65,7 @@ def is_official(e, artist, title):
 
 
 def candidates(row):
-    q = f"{main_artist(row['artist'])} {core_title(row['title'])} official video"
+    q = f"{main_artist(row['artist'])} {core_title(row['title'], row['artist'])} official video"
     with core._ydl({"extract_flat": "in_playlist"}) as y:
         info = y.extract_info(f"ytsearch8:{q}", download=False) or {}
     out = []
@@ -69,7 +77,8 @@ def candidates(row):
         if want and d and (d < want - 15 or d > want + 300):          # an intro or outro, not a different length song
             continue
         if is_official(e, row["artist"] or "", row["title"] or ""):
-            out.append({"page": f"https://www.youtube.com/watch?v={e['id']}", "duration": d, "title": e.get("title") or ""})
+            out.append({"page": f"https://www.youtube.com/watch?v={e['id']}", "duration": d, "title": e.get("title") or "",
+                        "channel": e.get("channel") or e.get("uploader") or ""})
     return out[:2]
 
 
@@ -148,7 +157,7 @@ def known(path):
 
 def remember(path, **kw):
     with core.video.LOCK:
-        core.video.SRC[path] = {**(core.video.SRC.get(path) or {}), **kw, "at": time.time(), "song": True}
+        core.video.SRC[path] = {**(core.video.SRC.get(path) or {}), **kw, "at": time.time(), "song": True, "matcher": MATCHER}
     core.video.save_src()
 
 
@@ -164,7 +173,7 @@ def find(row):
             url, hdrs, _ct = core.video.direct(c["page"], core.mixfeed.AUDIO_FMT)
             off, sure = align(path, url, float(row["duration"] or 0), float(c["duration"] or 0), hdrs)
             if sure:
-                best = {"page": c["page"], "offset": round(off, 2), "ok": True, "why": ""}
+                best = {"page": c["page"], "offset": round(off, 2), "ok": True, "why": "", "vtitle": c["title"], "vchannel": c["channel"]}
                 break
             why = "The official video is a different edit from your copy, so it can't play in step"
     except Exception as ex:  # noqa: BLE001
@@ -196,14 +205,15 @@ def look(row):
 def state(row):
     """-> what the player needs: looking / available / offset / why."""
     k = known(row["path"])
-    fresh = k.get("song") and (k.get("ok") or time.time() - k.get("at", 0) < core.video.SEARCH_AGAIN)
+    fresh = k.get("song") and (k.get("ok") or (time.time() - k.get("at", 0) < core.video.SEARCH_AGAIN
+                                               and k.get("matcher", 1) >= MATCHER))
     if not fresh:
         look(row)
         return {"looking": True, "available": False}
     if LOOKING.get(row["path"]):
         return {"looking": True, "available": False}
     return {"available": bool(k.get("ok") and k.get("page")), "offset": k.get("offset", 0), "why": k.get("why", ""),
-            "page": k.get("page") if k.get("page") not in ("", "test") else ""}
+            "page": k.get("page") if k.get("page") not in ("", "test") else "", "vtitle": k.get("vtitle", ""), "vchannel": k.get("vchannel", "")}
 
 
 def init(umculo):

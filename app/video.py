@@ -201,7 +201,9 @@ def info(sid):
     saved = os.path.exists(sidecar(row["path"]))
     st = SAVING.get(row["path"]) or {}
     if not mix:                                       # a song: its official music video, lined up with your copy
-        sv = core.songvideo.state(row) if not saved else {"available": True, "offset": (SRC.get(row["path"]) or {}).get("offset", 0)}
+        k = SRC.get(row["path"]) or {}
+        sv = core.songvideo.state(row) if not saved else {"available": True, "offset": k.get("offset", 0),
+                                                          "vtitle": k.get("vtitle", ""), "vchannel": k.get("vchannel", "")}
         return {"mix": False, **sv, "saved": saved, "saving": st.get("state") == "saving",
                 "message": st.get("message", ""), "progress": st.get("progress", 0)}
     page = page_for(row) if mix and not saved else ""

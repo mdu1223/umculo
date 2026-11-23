@@ -31,11 +31,15 @@ const { chromium, devices } = require('playwright');
   if (await p.$('.vid-tg')) probs.push('a song offers a video with music videos off');
   await p.evaluate(() => setSongVid(true)); await p.waitForTimeout(500);
   await p.waitForSelector('.vid-tg:has-text("Watch the video")', {timeout: 20000}).catch(() => probs.push('no video button on a song with music videos on'));
+  let failed = 0;                                       // the first try at the video fails upstream: it tries again
+  await p.route(u => u.pathname === '/api/video/' + songId, r => { if (!failed++) return r.fulfill({status: 502, body: 'upstream'}); return r.continue(); });
   if (await p.$('.vid-tg:has-text("Watch the video")')) {
     await p.click('.vid-tg:has-text("Watch the video")');
     await p.evaluate(() => { $('#player').currentTime = 1; $('#player').play().catch(() => {}); }); await p.waitForTimeout(2500);
     const sy = await p.evaluate(() => ({a: $('#player').currentTime, v: vidEl.currentTime, off: vidInfo[pq[pi].nd_id]?.offset}));
     if (sy.off !== 2 || Math.abs(sy.v - (sy.a + 2)) > 0.6) probs.push('music video not lined up with the song: ' + JSON.stringify(sy));
+    if (failed < 2) probs.push('the video was not tried again after a failed first load (' + failed + ')');
+    if (!await p.$('.np-art.vid video')) probs.push('a failed first load gave up on the video');
     await p.screenshot({path: out + '/04-song-video.png'});
   }
   await p.evaluate(() => setSongVid(false));

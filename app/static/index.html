@@ -217,6 +217,7 @@ header{padding-top:calc(14px + env(safe-area-inset-top))}
 .np-up{text-align:left;margin-top:6px}
 .np-uph{display:flex;align-items:center;justify-content:space-between}
 .mx-new{color:var(--accent);font-weight:700}
+.vid-src{text-align:center;font-size:12px;margin:-4px 0 6px}
 .chap-msg{display:flex;align-items:center;gap:6px;font-size:12px;margin:-4px 4px 6px;line-height:1.35}
 .np-uph .link{border:0;background:none;color:var(--accent);font-weight:700;font-size:13px;margin:16px 4px 6px;cursor:pointer}
 .q-art{width:44px;height:44px;flex:none;border-radius:8px}.q-art .ph{font-size:15px}
@@ -3163,7 +3164,13 @@ const vidEl = document.createElement("video");
 vidEl.muted = true; vidEl.playsInline = true; vidEl.preload = "auto"; vidEl.className = "np-video";
 vidEl.setAttribute("playsinline", ""); vidEl.setAttribute("muted", ""); vidEl.disablePictureInPicture = false;
 vidEl.onloadedmetadata = () => vidSync();
-vidEl.onerror = () => { if (!vidEl.getAttribute("src")) return; const id = vidEl._for; vidEl.removeAttribute("src"); vidEl._for = null;
+vidEl.onerror = () => { if (!vidEl.getAttribute("src")) return; const id = vidEl._for;
+  if (!vidEl._retried) {                          // the first try at a new video can fail upstream: one more go first
+    vidEl._retried = true; const src = vidEl.getAttribute("src"), t = vidEl.currentTime;
+    setTimeout(() => { if (vidEl._for !== id) return; vidEl.src = src + (src.includes("?") ? "&" : "?") + "again=1"; try { vidEl.currentTime = t; } catch (e) {} }, 1500);
+    return;
+  }
+  vidEl._retried = false; vidEl.removeAttribute("src"); vidEl._for = null;
   const v = Object.entries(vidInfo).find(([k]) => k === id || "n" + k === id); if (v) v[1].available = false;
   toast("The video wouldn't play; carrying on with the audio"); renderPlayer(); };
 function vidInfoFor(it) {
@@ -3185,7 +3192,8 @@ function npArt(it) {
   if (!v || !v.available) return artHTML(it, "np-art") + (v && v.loading && (it.mix_url || isLong(it)) ? `<div class="vid-row"><span class="vid-tg ghost"><span class="spin"></span>Looking for the video…</span></div>` : "");
   const row = `<div class="vid-row"><button class="vid-tg${videoOn ? " on" : ""}" onclick="toggleVideo()" aria-pressed="${videoOn}">${icon("video", 17)}<span>${videoOn ? "Video on" : "Watch the video"}</span></button>
     ${videoOn && !v.saved && !v.stream ? `<button class="vid-tg ghost" onclick="saveVideo()" title="Keep a copy, so it plays without the internet">${v.saving ? `<span class="spin"></span>Saving…` : `${icon("dl", 16)}<span>Save it</span>`}</button>` : ""}
-    ${videoOn && v.saved ? `<span class="vid-tg ghost">${icon("check", 16)}<span>Saved</span></span>` : ""}</div>`;
+    ${videoOn && v.saved ? `<span class="vid-tg ghost">${icon("check", 16)}<span>Saved</span></span>` : ""}</div>
+    ${videoOn && v.mix === false && v.vchannel ? `<div class="vid-src muted">Official video from ${esc(v.vchannel)}</div>` : ""}`;
   if (!it.mix_url && !isLong(it) && v.looking) return artHTML(it, "np-art");
   return (vidShowing(it) ? `<div class="artbox np-art vid"><div id="np-vidslot"></div>
       <div class="vid-bar"><button class="vid-qb" onclick="event.stopPropagation(); vqMenu()" aria-label="Video quality" title="Video quality">${vqLabel()}</button>
@@ -3198,7 +3206,7 @@ function vidSync() {
   const it = pq[pi], p = $("#player");
   const pip = document.pictureInPictureElement === vidEl;
   if (!it || ((!vidShowing(it) || !vidEl.isConnected) && !pip)) { if (!vidEl.paused) vidEl.pause(); return; }
-  if (vidEl._for !== qid(it)) { vidEl._for = qid(it); const q = vqParam();
+  if (vidEl._for !== qid(it)) { vidEl._for = qid(it); vidEl._retried = false; const q = vqParam();
     vidEl.src = it.mix_url ? `/api/mixvideo?u=${encodeURIComponent(it.mix_url)}${q ? "&" + q : ""}` : `/api/video/${it.nd_id}${q ? "?" + q : ""}`; return; }
   if (vidEl.readyState < 1) return;
   vidEl.playbackRate = p.playbackRate || 1;

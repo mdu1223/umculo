@@ -61,6 +61,8 @@ check(not off_("Rihanna - Umbrella (Lyrics) ft. Jay-Z", "7clouds"), "a lyric vid
 check(not off_("Rihanna - Umbrella (Live at the BRITs)", "RihannaVEVO"), "a live version doesn't")
 check(not off_("Umbrella - Rihanna cover", "Some Singer"), "a cover doesn't")
 check(not off_("Rihanna - Diamonds (Official Video)", "RihannaVEVO"), "another song doesn't")
+check(sv.is_official({"title": "Kendrick Lamar - LOYALTY. ft. Rihanna", "channel": "KendrickLamarVEVO"}, "Kendrick Lamar, Rihanna", "LOYALTY. FEAT. RIHANNA."), "a title with \"FEAT.\" and no brackets")
+check(sv.core_title("J. Cole - Power Trip (Explicit) ft. Miguel", "J. Cole") == "Power Trip", "the artist's name and (Explicit) come off the title")
 import random, struct, wave, tempfile
 _d = tempfile.mkdtemp(); R = 8000
 def _beats(sec, seed):
