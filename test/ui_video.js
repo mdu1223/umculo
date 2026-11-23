@@ -41,6 +41,20 @@ const { chromium, devices } = require('playwright');
     if (failed < 2) probs.push('the video was not tried again after a failed first load (' + failed + ')');
     if (!await p.$('.np-art.vid video')) probs.push('a failed first load gave up on the video');
     await p.screenshot({path: out + '/04-song-video.png'});
+    // full screen on an iPhone: inside the page, silent, in step, and a way out
+    await p.click('button[aria-label="Full screen"]'); await p.evaluate(() => { $('#player').currentTime = 0.5; }); await p.waitForTimeout(1500);
+    const fs = await p.evaluate(() => { const r = document.querySelector('.np-art.vid').getBoundingClientRect();
+      return {page: document.body.classList.contains('vfull'), native: !!document.fullscreenElement, w: r.width, h: r.height, vw: innerWidth, vh: innerHeight, muted: vidEl.muted,
+              d: vidEl.currentTime - $('#player').currentTime}; });
+    if (!fs.page || fs.native) probs.push('iPhone full screen should fill the page, not the phone player: ' + JSON.stringify(fs));
+    if (fs.w < fs.vw - 2 || fs.h < fs.vh - 2) probs.push('full screen video does not fill the screen: ' + JSON.stringify(fs));
+    if (!fs.muted) probs.push('video has its own sound in full screen');
+    if (Math.abs(fs.d - 2) > 0.6) probs.push('out of step in full screen: ' + JSON.stringify(fs));
+    await p.screenshot({path: out + '/05-iphone-full.png'});
+    await p.evaluate(() => { vidEl.muted = false; }); await p.waitForTimeout(300);
+    if (!await p.evaluate(() => vidEl.muted)) probs.push('the video could be unmuted');
+    await p.click('#vfull-x'); await p.waitForTimeout(500);
+    if (await p.evaluate(() => document.body.classList.contains('vfull'))) probs.push('could not leave full screen');
   }
   await p.evaluate(() => setSongVid(false));
   console.log(probs.length ? 'UI VIDEO PROBLEMS\n' + probs.join('\n') : 'UI VIDEO OK'); await b.close();

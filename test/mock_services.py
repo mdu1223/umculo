@@ -238,6 +238,11 @@ class H(BaseHTTPRequestHandler):
         # ---- Deezer
         if p == "/search":
             qq = q.get("q", [""])[0].lower()
+            if "versionbeat" in qq:                      # songs for the version check: the catalogue's recording
+                name = "right" if "right" in qq else "wrong"
+                return self.j({"data": [{**TRACK, "id": 900 if name == "right" else 901, "title": f"{name.title()} One",
+                                         "duration": 150, "artist": {"id": 90, "name": "Versionbeat"},
+                                         "preview": f"http://localhost:{PORT}/vpreview/{name}.mp3"}]})
             if "song c" in qq:
                 return self.j({"data": [{**TRACK, "id": 300, "title": "Song C", "artist": {"id": 9, "name": "Unknown Guy"}}]})
             if "ride" in qq and "machine" not in qq:
@@ -283,6 +288,15 @@ class H(BaseHTTPRequestHandler):
         if p == "/cover.jpg":
             with open(os.path.join(ROOT, "cover.jpg"), "rb") as fh:
                 return self.raw(fh.read(), "image/jpeg")
+        if p.startswith("/vpreview/"):
+            f = os.path.join(os.environ.get("VPREVIEW_DIR", "/tmp"), os.path.basename(p))
+            if os.path.exists(f):
+                with open(f, "rb") as fh:
+                    data = fh.read()
+                self.send_response(200); self.send_header("Content-Type", "audio/mpeg"); self.send_header("Content-Length", str(len(data))); self.end_headers()
+                self.wfile.write(data)
+                return
+            return self.j({}, 404)
         if p == "/preview.mp3":
             with open(os.path.join(ROOT, "preview.mp3"), "rb") as fh:
                 return self.raw(fh.read(), "audio/mpeg")

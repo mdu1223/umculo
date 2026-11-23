@@ -218,6 +218,10 @@ header{padding-top:calc(14px + env(safe-area-inset-top))}
 .np-uph{display:flex;align-items:center;justify-content:space-between}
 .mx-new{color:var(--accent);font-weight:700}
 .vid-src{text-align:center;font-size:12px;margin:-4px 0 6px}
+body.vfull .np-art.vid{position:fixed!important;inset:0!important;z-index:9000;margin:0!important;border-radius:0!important;width:100vw!important;height:100dvh!important;max-width:none!important;background:#000;aspect-ratio:auto!important}
+body.vfull .np-art.vid video{width:100%!important;height:100%!important;object-fit:contain}
+body.vfull{overflow:hidden}
+.vfull-x{position:fixed;top:max(12px,env(safe-area-inset-top));right:12px;z-index:9001;width:44px;height:44px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;font-size:20px}
 .chap-msg{display:flex;align-items:center;gap:6px;font-size:12px;margin:-4px 4px 6px;line-height:1.35}
 .np-uph .link{border:0;background:none;color:var(--accent);font-weight:700;font-size:13px;margin:16px 4px 6px;cursor:pointer}
 .q-art{width:44px;height:44px;flex:none;border-radius:8px}.q-art .ph{font-size:15px}
@@ -3263,9 +3267,26 @@ for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) document.addEve
 });
 vidEl.addEventListener("webkitendfullscreen", () => { if (renderPlayer.later) { renderPlayer.later = false; renderPlayer(); } });
 function vidFull() {
+  // a real full screen where the browser allows one for a page element (computers, Android). An iPhone only has its
+  // own video player for that, which plays the video's own sound over the song and loses the sync: there the video
+  // fills the screen inside Umculo instead, silent and in step.
+  if (document.body.classList.contains("vfull")) return pageFull(false);
   const f = vidEl.requestFullscreen || vidEl.webkitRequestFullscreen;
-  if (f) f.call(vidEl).catch?.(() => {}); else if (vidEl.webkitEnterFullscreen) vidEl.webkitEnterFullscreen();
+  if (f && document.fullscreenEnabled !== false && !/iPhone|iPod/.test(navigator.userAgent)) { f.call(vidEl).catch?.(() => pageFull(true)); return; }
+  pageFull(true);
 }
+document.addEventListener("keydown", e => { if (e.key === "Escape" && document.body.classList.contains("vfull")) pageFull(false); });
+new MutationObserver(() => { if (document.body.classList.contains("vfull") && !document.querySelector(".np-art.vid")) pageFull(false); })
+  .observe(document.body, {childList: true, subtree: true});
+function pageFull(on) {
+  document.body.classList.toggle("vfull", on);
+  if (on && !$("#vfull-x")) document.body.insertAdjacentHTML("beforeend", `<button id="vfull-x" class="vfull-x" onclick="pageFull(false)" aria-label="Leave full screen">✕</button>`);
+  if (!on) $("#vfull-x")?.remove();
+  vidEl.muted = true;
+}
+// the video never makes a sound of its own: the song plays from the audio player (some phones unmute it in full screen)
+for (const ev of ["play", "volumechange", "webkitbeginfullscreen", "loadedmetadata"]) vidEl.addEventListener(ev, () => { if (!vidEl.muted) vidEl.muted = true; });
+vidEl.addEventListener("webkitbeginfullscreen", () => { vidEl.muted = true; });
 async function saveVideos(rows, btn) {           // a playlist's: each song's official video, kept on the server
   const ids = (rows || []).filter(t => t.nd_id).map(t => t.nd_id);
   if (!ids.length) return;
@@ -3383,6 +3404,7 @@ async function openLibrary() {
       ${fix("dupes", "Same song more than once", r.dupes_n, r.dupes_n ? `${plural(r.dupes_n, "song")} ${r.dupes_n === 1 ? "has" : "have"} ${plural(r.dupes_files, "extra copy").replace("copys", "copies")}. Keeps the best (e.g. ${esc(r.dupes[0].title)}: ${esc(r.dupes[0].keep)} over ${esc(r.dupes[0].others.join(", "))}) and points playlists at it.` : "No duplicates")}
       ${fix("leftovers", "Leftover files", r.leftovers_n, r.leftovers_n ? `${r.leftovers_n} files (${r.leftovers_mb} MB) in Spotify Playlists that no playlist uses any more` : "Nothing left over")}
       ${fix("covers", "Missing cover art", r.no_cover_n, r.no_cover_n ? `${plural(r.no_cover_n, "song")} in your Umculo folder ${r.no_cover_n === 1 ? "has" : "have"} no cover; fetched from the catalogue` : "Every song has a cover")}` : ""}
+    <div id="versions-box"></div>
     <div class="box"><div class="rowline"><div class="meta"><div class="t">Lyrics</div><div class="muted">Adds synced lyrics from LRCLIB to songs in your Umculo folder that don't have any. ${r.lyrics_auto ? "New downloads get them automatically." : ""}</div></div>
       <button class="btn small" ${busy ? "disabled" : ""} onclick="libFix('lyrics')">Add</button></div></div>
     ${disk}
@@ -3390,6 +3412,31 @@ async function openLibrary() {
       <button class="btn small ghost" onclick="libBackup()">Back up now</button></div></div>`;
   if ($("#sheet").classList.contains("open")) setPanel(html); else openSheet(html);
   if (busy) libTimer = setTimeout(() => { if ($("#sheet").classList.contains("open")) openLibrary(); }, 3000);
+  versionsBox();
+}
+let verTimer = null;
+async function versionsBox() {                    // songs that aren't the recording the catalogue means
+  clearTimeout(verTimer);
+  const el = $("#versions-box"); if (!el) return;
+  let v; try { v = await api("/api/versions"); } catch (e) { return; }
+  const sus = v.suspects || [];
+  el.innerHTML = `<div class="box"><div class="rowline"><div class="meta"><div class="t">Wrong versions</div>
+      <div class="muted">${v.running ? `<span class="spin"></span> Listening to ${v.done} of ${v.total}${v.current ? ": " + esc(v.current) : ""}`
+        : `Compares each song with the album recording (Deezer's preview) and lists the ones that are another version: live, a remix, sped up, an instrumental, a cover, a video's edit. ${v.checked ? plural(v.checked, "song") + " checked so far." : ""}`}</div></div>
+      ${v.running ? `<button class="btn small ghost" onclick="verAct('stop')">Stop</button>` : `<button class="btn small" onclick="verAct('scan')">${v.checked ? "Check new songs" : "Check"}</button>`}</div>
+    ${v.running && v.total ? `<div class="bar"><i style="width:${Math.round(v.done * 100 / v.total)}%"></i></div>` : ""}
+    ${sus.length ? `<div class="muted" style="margin:8px 0 4px">${plural(sus.length, "song")} sound${sus.length === 1 ? "s" : ""} like another version:</div>
+      ${sus.map(x => `<div class="set-row"><span>${esc(x.artist)} – ${esc(x.title)}<br><span class="muted" style="font-size:12px">${x.fixing ? "Getting the right version…" : `yours ${hms(x.duration || 0)}${x.cat_duration ? ` · album ${hms(x.cat_duration)}` : ""}${x.catalogue ? ` (${esc(x.catalogue)})` : ""}`}</span></span>
+        <span style="white-space:nowrap">${x.fixing ? "" : `<button class="btn small" onclick="verAct('fix', ['${x.id}'])">Get the right one</button>
+          <button class="btn small ghost" onclick="verAct('dismiss', ['${x.id}'])">It's fine</button>`}</span></div>`).join("")}
+      ${sus.filter(x => !x.fixing).length > 1 ? `<button class="btn small" style="margin-top:8px" onclick="verAct('fix', ${esc(JSON.stringify(sus.filter(x => !x.fixing).map(x => x.id)))})">Get the right version of all ${sus.filter(x => !x.fixing).length}</button>` : ""}` : ""}</div>`;
+  if (v.running) verTimer = setTimeout(versionsBox, 3000);
+}
+async function verAct(what, ids) {
+  try { const r = await api("/api/versions/" + what, {method: "POST", body: JSON.stringify({ids: ids || []})});
+    if (what === "fix") toast(`Getting the right version of ${plural(r.queued, "song")}: each copy is checked before it replaces yours`);
+  } catch (e) { toast(e.message); }
+  versionsBox();
 }
 async function libScan() { try { await api("/api/library/scan", {method:"POST"}); setTimeout(openLibrary, 800); } catch (e) { toast(e.message); } }
 async function libFix(what) {

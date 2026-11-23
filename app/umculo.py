@@ -53,6 +53,7 @@ import listening  # noqa: E402
 import importers  # noqa: E402
 import video  # noqa: E402
 import songvideo  # noqa: E402
+import versions  # noqa: E402
 import chapters  # noqa: E402
 import radio  # noqa: E402
 import cast  # noqa: E402
@@ -69,7 +70,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.6.1"
+VERSION = "3.7.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -1920,6 +1921,10 @@ def race(job, tr, target, picks):
                     log("batch download failed:", tr.get("title"), "-", where, ":", e)
                     errors.append(f"{where}: {e}")
                     continue
+                if not stop.is_set() and not versions.check_download(path, target):
+                    errors.append(f"{where}: another version of the song")
+                    discard(req, path)
+                    continue
                 with lock:
                     if won or stop.is_set():
                         lost = True
@@ -2011,11 +2016,16 @@ def _process_track(job, tr):
         cur = tr.get("new_file") or tr.get("file") or ""
         cur_tier = (tr.get("new_tier") if tr.get("new_file") else tr.get("tier")) or ""
         cur_rank = pv(file_score(cur)) if cur and os.path.exists(cur) else -1
+        wrong = tr.get("replace") and not tr.get("new_file")   # the copy there is another version: it doesn't count
+        if wrong:
+            cur_rank = -1
         if tr.get("new_file"):                       # a "better later" re-check: keep the stand-in as the base
             tr_set(job, tr, file=cur, tier=cur_tier, quality=tr.get("new_quality") or tr.get("quality"))
 
         # 1. already upgraded through another playlist?
         hit = index_get(tr["artist"], tr["title"])
+        if hit and wrong and os.path.normpath(hit.get("path", "")) == os.path.normpath(cur):
+            hit = None                               # that's the wrong copy itself
         hit_score = (hit.get("score") or TIER_SCORE.get(hit["tier"], 0)) if hit else 0
         if hit and pv(hit_score) > cur_rank:
             return adopt(job, tr, hit["path"], hit["quality"], "Already in your library", hit["tier"],
@@ -2028,7 +2038,7 @@ def _process_track(job, tr):
             return
 
         # 2. import lists: is a good copy already in Navidrome?
-        if not cur:
+        if not cur and not wrong:
             target0 = make_target(tr["artist"], tr["title"])
             for s in nd_search(f"{tr['artist']} {tr['title']}".strip()):
                 if match(f"{s['artist']} {s['title']}", target0)[1]:
@@ -2071,7 +2081,10 @@ def _process_track(job, tr):
                 write_job_playlist(job)
             return
         if not picks:
-            if cur:
+            if cur and wrong:
+                tr_set(job, tr, state="not_found", last_try=time.time(),
+                       message="The right version isn't on your sources yet; keeping the copy you have")
+            elif cur:
                 tr_set(job, tr, state="kept", message=kept_reason(cands, cur_rank), last_try=time.time())
                 if writes_m3u(job):
                     write_job_playlist(job)
@@ -2539,7 +2552,7 @@ class Handler(BaseHTTPRequestHandler):
             if out is None:
                 out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs) or chapters.handle_get(u.path, qs) or radio.handle_get(u.path, qs) or cast.handle_get(u.path, qs) or party.handle_get(u.path, qs) or notify_people.handle_get(u.path, qs) or gigs.handle_get(u.path, qs) or alarms.handle_get(u.path, qs) or inbox.handle_get(u.path, qs)
             if out is None:
-                out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs)
+                out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs) or versions.handle_get(u.path, qs)
                        or share.handle_get(u.path, qs) or playlists.handle_get(u.path, qs) or recipes.handle_get(u.path, qs)
                        or artists.handle_get(u.path, qs) or users.handle_get(u.path, qs) or libview.handle_get(u.path, qs)
                        or connectors.handle_get(u.path, qs))
@@ -2668,7 +2681,7 @@ class Handler(BaseHTTPRequestHandler):
                 tr_set(job, tr, state="downloading", message="Starting your choice")
                 POOL.submit(manual_pick, job, tr, chk["target"], cand)
                 return self.send_json({"ok": True})
-            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0], b) or chapters.handle_post(self.path.split("?")[0], b) or mixfeed.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or notify_people.handle_post(self.path.split("?")[0], b) or gigs.handle_post(self.path.split("?")[0], b) or alarms.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or status.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
+            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0], b) or chapters.handle_post(self.path.split("?")[0], b) or mixfeed.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or notify_people.handle_post(self.path.split("?")[0], b) or gigs.handle_post(self.path.split("?")[0], b) or alarms.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or status.handle_post(self.path.split("?")[0], b) or versions.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
             if out is None:
                 out = listening.handle_post(self.path.split("?")[0], b)
             if out is None:
@@ -2822,6 +2835,7 @@ def main():
     likes.init(sys.modules[__name__])
     video.init(sys.modules[__name__])
     songvideo.init(sys.modules[__name__])
+    versions.init(sys.modules[__name__])
     chapters.init(sys.modules[__name__])
     radio.init(sys.modules[__name__])
     cast.init(sys.modules[__name__])

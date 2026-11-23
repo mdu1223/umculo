@@ -24,4 +24,5 @@ run together 8106 python3 test/v28_together.py 8106
 GIGS_API=http://127.0.0.1:11107 run life 8107 python3 test/v29_life.py 8107
 INBOX_EVERY=2 SLSK_WATCH_EVERY=1 SLSK_OFF_AFTER=2 SLSK_CANARY_EVERY=1 SLSK_SUSPECT_AFTER=1 run sources 8108 python3 test/v30_sources.py 8108
 TEST_SHAZAM=1 TEST_MIXES=$PWD/test/mixes_fixture.json run mixfeed 8110 python3 test/v31_mixfeed.py 8110
+run versions  8111 python3 test/v32_versions.py 8111
 exit $FAIL

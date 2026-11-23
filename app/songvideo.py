@@ -126,10 +126,16 @@ def _z(x):
 
 def best_lag(a, b):
     """Where a fits best inside b: (lag in frames, how clearly it fits: the peak in standard deviations)."""
+    k, z, _r = fit(a, b)
+    return k, z
+
+
+def fit(a, b):
+    """Where a fits best inside b: (lag in frames, how the peak stands out (std devs), how alike they are there (0-1))."""
     a, b = _z(a), _z(b)
     n = len(a)
     if n < FPS * 10 or len(b) < n:
-        return 0, 0.0
+        return 0, 0.0, 0.0
     scores = []
     for k in range(0, len(b) - n + 1):
         bb = b[k:k + n]
@@ -137,7 +143,7 @@ def best_lag(a, b):
     k = max(range(len(scores)), key=scores.__getitem__)
     m = sum(scores) / len(scores)
     s = math.sqrt(sum((v - m) ** 2 for v in scores) / len(scores)) or 1.0
-    return k, (scores[k] - m) / s
+    return k, (scores[k] - m) / s, scores[k]
 
 
 def align(song, video, song_dur, video_dur, headers=None):

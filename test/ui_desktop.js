@@ -32,5 +32,8 @@ const { chromium, devices } = require('playwright');
   if (m.dock || m.nav !== 'row') probs.push('phone layout after resize ' + JSON.stringify(m));
   await p.evaluate(() => openPlayer()); await p.waitForTimeout(800); if (!await p.$('#panel #np')) probs.push('phone player did not open in the sheet');
   await shot('phone-player');
+  await p.evaluate(() => openLibrary()); await p.waitForTimeout(2000);
+  if (!/Wrong versions/.test(await p.evaluate(() => $('#versions-box')?.innerText || ''))) probs.push('Library care has no Wrong versions section');
+  await p.evaluate(() => closeSheet());
   console.log(probs.length ? 'UI DESKTOP PROBLEMS\n' + probs.join('\n') : 'UI DESKTOP OK'); await b.close();
 })();
