@@ -151,5 +151,26 @@ for _ in range(40):
         ok = True; break
     time.sleep(0.5)
 check(ok, f"a stuck Soulseek connection is reconnected by itself {st}")
+# Soulseek connected but finding nothing: Umculo restarts slskd (with slskd's own login), by itself or from the button
+lg = web("/api/slskd/login")
+check(lg.get("set") is False, f"no slskd login yet {lg}")
+r = web("/api/slskd/restart", "POST")
+check("login" in (r.get("error") or "").lower(), f"restart without a login says to add it {r}")
+r = web("/api/slskd/login", "POST", {"username": "slsk-admin", "password": "wrong"})
+check(r.get("error"), f"a wrong slskd login isn't kept {r}")
+r = web("/api/slskd/login", "POST", {"username": "slsk-admin", "password": "s3cret"})
+check(r.get("set") and "password" not in json.dumps(web("/api/slskd/login")), f"the right login is kept, and never sent back {r}")
+urllib.request.urlopen(MK + "/test/slsk-broken").read()
+web("/api/check", "POST", {"text": "Nobody - Nothing Here"})     # a search that finds nothing: worth checking
+ok = False
+for _ in range(60):
+    st = json.loads(urllib.request.urlopen(MK + "/test/slsk-state").read())
+    if st["restarts"] >= 1: ok = True; break
+    time.sleep(0.5)
+check(ok, f"connected but finding nothing: Umculo restarts slskd by itself {st}")
+before = st["restarts"]
+r = web("/api/slskd/restart", "POST")
+st = json.loads(urllib.request.urlopen(MK + "/test/slsk-state").read())
+check(r.get("ok") and st["restarts"] == before + 1, f"the Restart Soulseek button restarts it {r} {st}")
 print(f"V30 OK {n}" if not bad else f"V30 FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)

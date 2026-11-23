@@ -80,6 +80,67 @@ WATCH_EVERY = float(os.environ.get("SLSK_WATCH_EVERY", "60"))      # how often t
 OFF_AFTER = float(os.environ.get("SLSK_OFF_AFTER", "120"))          # off this long: ask it to reconnect (s)
 
 
+# --------------------------------------------------------------------------- restarting slskd
+# slskd only lets its own admin restart it: Umculo signs in with slskd's web login (which the admin enters once
+# in Settings; kept in config/slskd_login.json, readable only by Umculo, never sent back) and asks it to restart.
+LOGIN_FILE = "slskd_login.json"
+CANARY = os.environ.get("SLSK_CANARY", "Rihanna Umbrella")      # a song nearly everyone on Soulseek shares
+RESTART_EVERY = float(os.environ.get("SLSK_RESTART_EVERY", "7200"))  # at most this often by itself (s)
+CANARY_EVERY = float(os.environ.get("SLSK_CANARY_EVERY", "600"))     # check with the well-known song at most this often
+SUSPECT_AFTER = int(os.environ.get("SLSK_SUSPECT_AFTER", "6"))       # searches in a row that found nothing
+
+
+def slskd_login():
+    d = core._load_json(LOGIN_FILE, {}) or {}
+    u = d.get("username") or os.environ.get("SLSKD_USERNAME", "")
+    p = d.get("password") or os.environ.get("SLSKD_PASSWORD", "")
+    return (u, p) if u and p else None
+
+
+def set_login(username, password):
+    if not username or not password:
+        core._save_json(LOGIN_FILE, {})
+        return {"set": False}
+    base = core.CONFIG["slskd"]
+    try:                                             # check it works before keeping it
+        r = core.http("POST", f"{base}/api/v0/session", {"username": username, "password": password}, timeout=15, retries=0) or {}
+    except Exception as ex:  # noqa: BLE001
+        raise ValueError(f"slskd didn't accept that login ({ex})") from ex
+    if not (r.get("token") or r.get("Token")):
+        raise ValueError("slskd didn't accept that login")
+    core._save_json(LOGIN_FILE, {"username": username, "password": password})
+    try:
+        os.chmod(os.path.join(core.CONFIG["config"], LOGIN_FILE), 0o600)
+    except OSError:
+        pass
+    return {"set": True, "username": username}
+
+
+def restart_slskd(why):
+    """Sign in to slskd as its admin and ask it to restart itself. -> a message for people."""
+    login = slskd_login()
+    if not login:
+        raise LookupError("Add slskd's web login (Settings > Connectors > Soulseek) so Umculo can restart it")
+    base = core.CONFIG["slskd"]
+    r = core.http("POST", f"{base}/api/v0/session", {"username": login[0], "password": login[1]}, timeout=15, retries=0) or {}
+    token = r.get("token") or r.get("Token")
+    if not token:
+        raise LookupError("slskd didn't accept its saved login: enter it again in Settings > Connectors > Soulseek")
+    core.http("PUT", f"{base}/api/v0/application", {}, {"Authorization": f"Bearer {token}"}, timeout=20, retries=0)
+    SLSK_WATCH.update(restarted_at=time.time(), broken=False, canary_at=0)
+    core.SLSK.update(empty_streak=0, pause_until=0)
+    core.log(f"Soulseek: restarted slskd ({why})")
+    return "slskd is restarting: Soulseek is back in about a minute"
+
+
+def canary_ok():
+    """A search for a song nearly everyone shares: an empty answer means slskd is connected but not working."""
+    try:
+        return bool(core._slskd_search(CANARY, seconds=12))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def slsk_watch():
     """slskd sometimes drops off Soulseek and stays there ("Disconnecting" for hours). Every minute: if it's been
     off for 2 minutes, tell it to reconnect (and, if it's stuck halfway, to finish disconnecting first)."""
@@ -93,7 +154,25 @@ def slsk_watch():
                 if "LoggedIn" in state or "Logged In" in state:
                     if SLSK_WATCH["since"]:
                         core.log(f"Soulseek: connected again ({SLSK_WATCH['tries']} reconnect tries)")
+                        SLSK_WATCH["check_after"] = time.time() + 90          # reconnected: check it really works
                     SLSK_WATCH.update(since=0, tries=0, state=state)
+                    now = time.time()
+                    suspect = core.SLSK["empty_streak"] >= SUSPECT_AFTER or (SLSK_WATCH.get("check_after") and now > SLSK_WATCH["check_after"])
+                    if suspect and now - SLSK_WATCH.get("canary_at", 0) > CANARY_EVERY:
+                        SLSK_WATCH.update(canary_at=now, check_after=0)
+                        if canary_ok():
+                            SLSK_WATCH["broken"] = False
+                            core.SLSK["empty_streak"] = 0
+                        else:
+                            SLSK_WATCH["broken"] = True
+                            if slskd_login() and now - SLSK_WATCH.get("restarted_at", 0) > RESTART_EVERY:
+                                try:
+                                    restart_slskd("connected, but even a search for a well-known song found nothing")
+                                except Exception as ex:  # noqa: BLE001
+                                    core.log("Soulseek: couldn't restart slskd:", ex)
+                            elif not slskd_login():
+                                core.log("Soulseek: connected but finding nothing; restart slskd "
+                                         "(add its web login in Settings so Umculo can do it for you)")
                 else:
                     now = time.time()
                     if not SLSK_WATCH["since"]:
@@ -129,6 +208,9 @@ def slsk_watch():
 def c_soulseek():
     st = core.http("GET", f"{core.CONFIG['slskd']}/api/v0/server", headers=core.slskd_headers(), timeout=10) or {}
     state = st.get("state") or ""
+    if SLSK_WATCH.get("broken") and ("LoggedIn" in state or "Logged In" in state):
+        can = " (Umculo will restart it)" if slskd_login() else ": press Restart Soulseek"
+        return "down", f"Connected as {st.get('username', '')}, but searches find nothing{can}"
     s = core.SLSK
     extra = f" · {s['searches']} searches, {s['empty']} unanswered"
     if s["pause_until"] > time.time():
@@ -335,10 +417,26 @@ def handle_get(path, qs):
         if not core.users.is_admin():
             raise PermissionError("Only the admin can see this")
         return core.server.stream_report() if core.builtin() else {"streams": [], "summary": {}, "tips": []}
+    if path == "/api/slskd/login":
+        if not core.users.is_admin():
+            raise PermissionError("Only the admin can see this")
+        lg = slskd_login()
+        return {"set": bool(lg), "username": lg[0] if lg else "",
+                "restarted_at": SLSK_WATCH.get("restarted_at", 0), "broken": bool(SLSK_WATCH.get("broken"))}
     if path == "/api/status/summary":
         with LOCK:
             return {"overall": LAST["overall"], "at": LAST["at"]}
     return None
+
+
+def handle_post(path, b):
+    if path not in ("/api/slskd/restart", "/api/slskd/login"):
+        return None
+    if not core.users.is_admin():
+        raise PermissionError("Only the admin can do this")
+    if path == "/api/slskd/restart":
+        return {"ok": True, "message": restart_slskd("restarted from the app")}
+    return set_login((b or {}).get("username", "").strip(), (b or {}).get("password", ""))
 
 
 def init(umculo):

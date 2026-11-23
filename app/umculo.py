@@ -69,7 +69,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.5.1"
+VERSION = "3.6.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2668,7 +2668,7 @@ class Handler(BaseHTTPRequestHandler):
                 tr_set(job, tr, state="downloading", message="Starting your choice")
                 POOL.submit(manual_pick, job, tr, chk["target"], cand)
                 return self.send_json({"ok": True})
-            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0], b) or chapters.handle_post(self.path.split("?")[0], b) or mixfeed.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or notify_people.handle_post(self.path.split("?")[0], b) or gigs.handle_post(self.path.split("?")[0], b) or alarms.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
+            out = mixtidy.handle("POST", self.path.split("?")[0]) or video.handle_post(self.path.split("?")[0], b) or chapters.handle_post(self.path.split("?")[0], b) or mixfeed.handle_post(self.path.split("?")[0], b) or cast.handle_post(self.path.split("?")[0], b) or party.handle_post(self.path.split("?")[0], b) or notify_people.handle_post(self.path.split("?")[0], b) or gigs.handle_post(self.path.split("?")[0], b) or alarms.handle_post(self.path.split("?")[0], b) or likes.handle_post(self.path.split("?")[0], b) or status.handle_post(self.path.split("?")[0], b) or links.handle_post(self.path, b)
             if out is None:
                 out = listening.handle_post(self.path.split("?")[0], b)
             if out is None:

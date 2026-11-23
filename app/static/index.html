@@ -4149,7 +4149,8 @@ async function openStatus(fresh) {
   setPanel(`<div class="grab"></div><div class="rowline"><span class="sdot ${r.overall}" style="margin:0"></span><div class="meta"><div class="t">${word}</div>
       <div class="muted">Umculo ${esc(r.version)} · checked ${r.at ? ago(r.at) : "never"}</div></div><button class="icon" onclick="closeSheet()">✕</button></div>
     <div class="box" style="margin-top:12px">${r.checks.map(c => `<div class="check"><span class="sdot ${c.state}"></span><div class="meta">
-      <div class="t" style="white-space:normal">${esc(c.name)}</div><div class="muted" style="white-space:normal">${esc(c.detail)}</div></div>
+      <div class="t" style="white-space:normal">${esc(c.name)}</div><div class="muted" style="white-space:normal">${esc(c.detail)}</div>
+      ${c.id === "soulseek" && me?.user?.is_admin ? `<button class="btn small ghost" style="margin-top:6px" onclick="slskRestart(this)">Restart Soulseek</button>` : ""}</div>
       <span class="muted">${c.ms < 1000 ? c.ms + " ms" : (c.ms/1000).toFixed(1) + " s"}</span></div>`).join("")}</div>
     <div class="chips" style="flex-wrap:nowrap"><button class="btn ghost" style="flex:1" onclick="setPanel('<div class=&quot;empty&quot;><span class=&quot;spin&quot;></span> Checking…</div>'); openStatus(true)">Check again</button>
     <button class="btn ghost" style="flex:1" onclick="openLogs()">Logs</button></div>
@@ -4331,6 +4332,7 @@ function renderConnectors() {
     <div id="conn-list">${groups.map(g => `<h2>${esc(fm ? "Folders" : g)}</h2><div class="box" style="padding-top:2px;padding-bottom:2px">
       ${r.connectors.filter(c => c.group === g).map(connRow).join("")}</div>`).join("")}</div>`);
   if (connOpen) applyShow(connOpen);
+  if (connOpen === "soulseek") slskExtra();
   connSchedule();
 }
 function connRow(c) {
@@ -4368,7 +4370,31 @@ function connBody(c) {
     ${c.fields.map(f => connField(c, f)).join("")}
     <div class="row-btns">${c.fields.length ? `<button class="btn small" onclick="connSave('${c.id}')">Save</button>` : ""}
       ${c.testable ? `<button class="btn small ghost" onclick="connTest('${c.id}')">Test</button>` : ""}${acts}</div>
-    <div class="result" id="ct-${c.id}">${t}</div></div>`;
+    <div class="result" id="ct-${c.id}">${t}</div>${c.id === "soulseek" ? `<div id="slsk-extra"></div>` : ""}</div>`;
+}
+async function slskExtra() {                     // Soulseek: restart slskd from here, and the login Umculo needs for that
+  const el = $("#slsk-extra"); if (!el) return;
+  let r; try { r = await api("/api/slskd/login"); } catch (e) { return; }
+  el.innerHTML = `<h3 style="margin:14px 0 4px">When Soulseek gets stuck</h3>
+    <div class="muted">${r.set ? `Umculo signs in to slskd as <b>${esc(r.username)}</b> to restart it, by itself when it's connected but finding nothing (at most every two hours), or when you press the button.`
+      : "slskd sometimes stays connected but finds nothing until it's restarted. Enter slskd's own web login (the one for its web page) and Umculo can restart it: by itself when that happens, or when you press the button."}
+      ${r.restarted_at ? ` Last restarted ${ago(r.restarted_at)}.` : ""}</div>
+    <div class="row-btns" style="margin-top:8px"><button class="btn small" onclick="slskRestart(this)" ${r.set ? "" : "disabled"}>Restart Soulseek</button></div>
+    <div style="margin-top:10px"><input class="field" id="slsk-u" placeholder="slskd username" autocomplete="off" value="${esc(r.username || "")}">
+      <input class="field" id="slsk-p" type="password" placeholder="${r.set ? "slskd password (saved)" : "slskd password"}" autocomplete="new-password" style="margin-top:6px">
+      <div class="row-btns"><button class="btn small ghost" onclick="slskLogin(this)">${r.set ? "Change login" : "Save login"}</button></div></div>`;
+}
+async function slskLogin(btn) {
+  btn.disabled = true;
+  try { const r = await api("/api/slskd/login", {method: "POST", body: JSON.stringify({username: $("#slsk-u").value, password: $("#slsk-p").value})});
+    toast(r.set ? "slskd login saved: Umculo can restart it now" : "slskd login removed"); slskExtra(); }
+  catch (e) { toast(e.message); btn.disabled = false; }
+}
+async function slskRestart(btn) {
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin"></span> Restarting…`; }
+  try { const r = await api("/api/slskd/restart", {method: "POST"}); toast(r.message); }
+  catch (e) { toast(e.message); }
+  setTimeout(() => { if ($("#slsk-extra")) slskExtra(); if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = "Restart Soulseek"; } }, 4000);
 }
 function connExpand(id) { connOpen = connOpen === id ? null : id; renderConnectors(); }
 function connValue(id, key) {

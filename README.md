@@ -104,6 +104,7 @@ Most settings live in the app (**Settings**). These are set in `docker-compose.y
 | `FINDER_LISTENERS` | `4` | At most this many song-finder lookups at once (Shazam limits each server to a burst of about 20, then a few a minute; Umculo paces itself) |
 | `AUTO_GET_SONGS` | `1` | Get each song the song finder hears (and you don't have) from your sources straight away |
 | `MIX_MAX_AGE_DAYS` | `540` | Mixes for you: older sets only show when there aren't enough newer ones |
+| `SLSKD_USERNAME`, `SLSKD_PASSWORD` | | slskd's web login, so Umculo can restart it (or enter it in Settings > Connectors > Soulseek) |
 | `SLSK_OFF_AFTER` | `120` | Seconds slskd may be off Soulseek before Umculo asks it to reconnect |
 | `GIGS_APP_ID` | | Your Bandsintown app ID, for gigs near you (Bandsintown no longer answers without one) |
 | `TZ` | `Africa/Johannesburg` | Time zone for the weekly note (alarms keep the time zone of the phone that set them) |

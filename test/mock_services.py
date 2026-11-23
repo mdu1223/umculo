@@ -192,6 +192,14 @@ class H(BaseHTTPRequestHandler):
     def do_PUT(self):  # noqa: N802
         n = int(self.headers.get("Content-Length") or 0)
         d = json.loads(self.rfile.read(n) or b"{}")
+        if self.path == "/api/v0/application":            # slskd: restart (its admin only)
+            if self.headers.get("Authorization") != "Bearer JWT-OK":
+                self.send_response(401); self.send_header("Content-Length", "0"); self.end_headers()
+                return
+            STATE["slsk_restarts"] = STATE.get("slsk_restarts", 0) + 1
+            STATE["slsk_broken"] = False
+            STATE["slsk"] = "Connected, LoggedIn"
+            return self.j({})
         if self.path == "/api/v0/server":                 # slskd: connect to Soulseek
             if "json" not in (self.headers.get("Content-Type") or ""):
                 self.send_response(415); self.send_header("Content-Length", "0"); self.end_headers()
@@ -218,7 +226,10 @@ class H(BaseHTTPRequestHandler):
             STATE["slsk"] = "Disconnecting"
             return self.j({"ok": True})
         if p == "/test/slsk-state":
-            return self.j({"state": STATE["slsk"], "puts": STATE["slsk_puts"]})
+            return self.j({"state": STATE["slsk"], "puts": STATE["slsk_puts"], "restarts": STATE.get("slsk_restarts", 0)})
+        if p == "/test/slsk-broken":
+            STATE["slsk_broken"] = True
+            return self.j({"ok": True})
         # ---- Deezer
         if p == "/search":
             qq = q.get("q", [""])[0].lower()
@@ -379,6 +390,11 @@ class H(BaseHTTPRequestHandler):
             return self.j({"isComplete": True})
         if p.endswith("/responses"):
             q = STATE.get("searches", {}).get(p.split("/")[-2], "")
+            if STATE.get("slsk_broken"):                  # connected, but nothing comes back until it's restarted
+                return self.j([])
+            if q == "Rihanna Umbrella":                  # the well-known song Umculo checks with
+                return self.j([{"username": "pop", "hasFreeUploadSlot": True, "uploadSpeed": 1_000_000,
+                                "files": [{"filename": "Music\\Rihanna - Umbrella.mp3", "size": 8_000_000, "bitRate": 320, "length": 275}]}])
             if "ride" in q:
                 return self.j([{"username": "wavking", "hasFreeUploadSlot": True, "uploadSpeed": 3_000_000,
                                 "files": [{"filename": "Music\\Freak SA - Ride.flac", "size": 40_000_000,
@@ -474,6 +490,11 @@ class H(BaseHTTPRequestHandler):
             ND["libs"].append({"id": lid, "name": d["name"], "path": d["path"]})
             print("ND CREATE LIBRARY", d["path"], flush=True)
             return self.j({"id": lid})
+        if p == "/api/v0/session":                       # slskd's web login: a token for its admin
+            d = json.loads(body or b"{}")
+            if d.get("username") == "slsk-admin" and d.get("password") == "s3cret":
+                return self.j({"token": "JWT-OK", "name": "slsk-admin"})
+            return self.j({"error": "bad login"}, 401)
         if p == "/api/v0/searches":
             sid = "s%d" % (len(STATE.setdefault("searches", {})) + 1)
             STATE["searches"][sid] = json.loads(body)["searchText"]

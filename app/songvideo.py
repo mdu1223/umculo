@@ -22,7 +22,7 @@ import time
 core = None
 LOOKING = {}             # path -> True while being looked up
 POOL = cf.ThreadPoolExecutor(max_workers=2)
-MATCHER = 2              # raise when finding videos gets better: songs that found none are looked up again
+MATCHER = 3              # raise when finding videos gets better: songs that found none are looked up again
 FPS = 20                 # loudness changes compared 20 times a second (50 ms: in step to the eye)
 RATE = 4000
 BAD = re.compile(r"\b(lyrics?|lyric video|audio|visuali[sz]er|live|cover|reaction|karaoke|instrumental|sped up|slowed|"
@@ -68,7 +68,7 @@ def candidates(row):
     q = f"{main_artist(row['artist'])} {core_title(row['title'], row['artist'])} official video"
     with core._ydl({"extract_flat": "in_playlist"}) as y:
         info = y.extract_info(f"ytsearch8:{q}", download=False) or {}
-    out = []
+    out, looked = [], 0
     want = row["duration"] or 0
     for e in info.get("entries") or []:
         if not e or not e.get("id"):
@@ -76,10 +76,24 @@ def candidates(row):
         d = int(e.get("duration") or 0)
         if want and d and (d < want - 15 or d > want + 300):          # an intro or outro, not a different length song
             continue
+        if not (e.get("channel") or e.get("uploader")) and looked < 3 \
+                and norm(core_title(row["title"], row["artist"])) in norm(e.get("title")) and not BAD.search(e.get("title") or ""):
+            looked += 1                              # search results sometimes leave the channel out: look it up
+            e = {**e, **meta(f"https://www.youtube.com/watch?v={e['id']}")}
         if is_official(e, row["artist"] or "", row["title"] or ""):
             out.append({"page": f"https://www.youtube.com/watch?v={e['id']}", "duration": d, "title": e.get("title") or "",
                         "channel": e.get("channel") or e.get("uploader") or ""})
     return out[:2]
+
+
+def meta(page):
+    """A video's title and channel."""
+    try:
+        with core._ydl({}) as y:
+            i = y.extract_info(page, download=False, process=False) or {}
+        return {"title": i.get("title") or "", "channel": i.get("channel") or i.get("uploader") or ""}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 # --------------------------------------------------------------------------- lining the picture up with the song
@@ -185,6 +199,21 @@ def find(row):
     return known(path)
 
 
+FILLING = set()
+
+
+def fill(path, page):
+    if path in FILLING:
+        return
+    FILLING.add(path)
+
+    def go():
+        m = meta(page)
+        if m:
+            remember(path, vtitle=m.get("title", ""), vchannel=m.get("channel", "") or "YouTube")
+    POOL.submit(go)
+
+
 def look(row):
     """Start looking in the background (once)."""
     path = row["path"]
@@ -212,6 +241,8 @@ def state(row):
         return {"looking": True, "available": False}
     if LOOKING.get(row["path"]):
         return {"looking": True, "available": False}
+    if k.get("ok") and not k.get("vchannel") and str(k.get("page", "")).startswith("http"):
+        fill(row["path"], k["page"])                 # found before the channel was kept: look it up once
     return {"available": bool(k.get("ok") and k.get("page")), "offset": k.get("offset", 0), "why": k.get("why", ""),
             "page": k.get("page") if k.get("page") not in ("", "test") else "", "vtitle": k.get("vtitle", ""), "vchannel": k.get("vchannel", "")}
 
