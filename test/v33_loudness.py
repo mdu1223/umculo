@@ -43,6 +43,10 @@ check(isinstance(rg.get("trackGain"), (int, float)) and rg["trackGain"] < 0, f"m
 check(0 < rg.get("trackPeak", 0) < 4, f"with the peak {rg}")
 check(web("/api/loudness?ids=nope").get("songs") == {}, "an unknown song is just left out")
 if bad:
+    import sqlite3
+    db = sqlite3.connect(os.path.join(S, "config", "library.db"))
+    print("library:", db.execute("SELECT id, lib, path FROM song WHERE artist='Loudbeat'").fetchall(), "ids:", ids)
+    print("now:", web("/api/loudness?ids=" + ",".join(ids.values())))
     try: print("".join(l for l in open(os.path.join(S, "app.log")) if "even volume" in l)[-1500:])
     except OSError: pass
 print(("V33 OK %d" % n) if not bad else ("V33 FAILED %d/%d" % (len(bad), n)))

@@ -27,9 +27,9 @@ WAKE = threading.Event()
 def measure(path):
     """-> (integrated loudness LUFS, true peak dBTP) or None."""
     try:
-        p = subprocess.run(["nice", "-n", "15", "ffmpeg", "-nostats", "-hide_banner", "-i", path, "-vn",
+        p = subprocess.run(["nice", "-n", "15", "ffmpeg", "-nostdin", "-nostats", "-hide_banner", "-i", path, "-vn",
                             "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
-                           capture_output=True, text=True, timeout=600)
+                           capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired) as ex:
         core.log("even volume: couldn't measure", os.path.basename(path), ex)
         return None
@@ -151,7 +151,7 @@ def for_ids(ids):
 def handle_get(path, qs):
     if path == "/api/loudness":
         ids = [x for x in (qs.get("ids", [""])[0] or "").split(",") if x]
-        return {"target": TARGET, "songs": for_ids(ids), **{k: STATE[k] for k in ("running", "left")}}
+        return {"target": TARGET, "songs": for_ids(ids), **{k: STATE[k] for k in ("running", "left", "current")}}
     return None
 
 
