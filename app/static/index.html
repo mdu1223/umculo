@@ -1171,7 +1171,7 @@ async function loadRequests() {
   const items = r.requests;
   updateCount(items);
   const albums = await albumQueue();
-  $("#requests").innerHTML = albums + (items.length ? items.map(q => {
+  const card = q => {
     const c = q.candidate, t = q.target;
     const active = !["ready","failed"].includes(q.state);
     const done = ["ready","failed"].includes(q.state);
@@ -1181,14 +1181,34 @@ async function loadRequests() {
         : `<button class="sa del" onclick="reqDel('${q.id}', false)">Stop</button>`}</div>
       <div class="sw-front req"><button class="x" title="More" onclick="swToggle(this)">⋯</button>
       <div class="t">${esc(t.title)}</div>
-      <div class="s">${esc(t.artist)} · <span class="q ${c.tier}">${esc(c.quality)}</span> from ${SRC[c.source]}${q.who && me?.user?.is_admin ? ` · for ${esc(q.who)}` : ""}</div>
+      <div class="s">${esc(t.artist)} · <span class="q ${c.tier}">${esc(c.quality)}</span> from ${SRC[c.source]}${q.who && me?.user?.is_admin ? ` · for ${esc(q.who)}` : ""}${done && q.updated ? ` · ${ago(q.updated)}` : ""}</div>
       ${active ? `<div class="bar"><i style="width:${Math.max(3, q.progress||0)}%"></i></div>` : ""}
       <div class="state ${q.state}">${q.state === "ready" ? "✓ " : ""}${esc(niceMsg(q.message))}</div>
       ${q.warning ? `<div class="warn">${esc(q.warning)}</div>` : ""}
       ${q.state === "ready" && q.file ? `<div class="s" style="margin-top:4px">${esc(q.file.replace(/^.*?\/Music\//, ""))}</div>` : ""}
+      ${q.state === "failed" ? `<div class="row-btns" style="margin-top:6px"><button class="btn small ghost" onclick="findText(${esc(JSON.stringify(t.artist + " - " + t.title))})">Find it again</button></div>` : ""}
     </div></div>`;
-  }).join("") : `<div class="empty">Nothing downloading right now.<br><span class="muted">Songs you get from search, playlists and mixes show up here while they download.</span></div>`);
+  };
+  // downloading first; then what finished, and what couldn't be got. Older than 3 days: behind "Show older"
+  const old = q => Date.now() / 1000 - (q.updated || q.created || 0) > 3 * 86400;
+  const going = items.filter(q => !["ready","failed"].includes(q.state));
+  const ready = items.filter(q => q.state === "ready"), failed = items.filter(q => q.state === "failed");
+  const recent = x => reqShowOld ? x : x.filter(q => !old(q));
+  const hidden = reqShowOld ? 0 : items.filter(q => ["ready","failed"].includes(q.state) && old(q)).length;
+  const sect = (title, list) => list.length ? `<h2>${title} <span class="count">${list.length}</span></h2>` + list.map(card).join("") : "";
+  const finished = ready.length + failed.length;
+  $("#requests").innerHTML = albums + (items.length ? sect("Downloading", going) + sect("Couldn't get these", recent(failed)) + sect("Done", recent(ready))
+      + `<div class="row-btns" style="margin:12px 0">${hidden ? `<button class="btn small ghost" onclick="reqShowOld = true; loadRequests()">Show older (${hidden})</button>` : ""}
+        ${finished ? `<button class="btn small ghost" onclick="reqClear()">Clear finished (${finished})</button>` : ""}</div>`
+    : `<div class="empty">Nothing downloading right now.<br><span class="muted">Songs you get from search, playlists and mixes show up here while they download.</span></div>`);
   if (!$("#view-requests").hidden && (/Fetching/.test(albums) || items.some(q => !["ready","failed"].includes(q.state)))) reqTimer = setTimeout(loadRequests, 2500);
+}
+let reqShowOld = false;
+async function reqClear() {                       // take every finished and failed download off the list (files stay)
+  let r; try { r = await api("/api/requests"); } catch (e) { return toast(e.message); }
+  const ids = r.requests.filter(q => ["ready","failed"].includes(q.state)).map(q => q.id);
+  for (const id of ids) { try { await api(`/api/requests/${id}/dismiss`, {method: "POST"}); } catch (e) {} }
+  toast(`Cleared ${plural(ids.length, "download")} from the list (the songs stay in your library)`); loadRequests();
 }
 async function dismiss(id) { await api(`/api/requests/${id}/dismiss`, {method:"POST"}); loadRequests(); }
 async function reqDel(id, file) {
@@ -2489,10 +2509,28 @@ function srcFor(it) {                         // the stream key lets AirPlay, Ch
 /* gapless and crossfade: the next song loads in a second player and takes over the moment this one ends */
 const canFade = (() => { try { const a = new Audio(); a.volume = 0.5; return a.volume === 0.5; } catch (e) { return false; } })();
 let xfade = 0, masterVol = 1, volBefore = 1, vidQ = "";                                // read once the saved settings are set up (below)
+/* even volume: the server measures how loud each song is; loud ones are turned down to the same level
+   (a page can only turn a player down, and iPhones don't let a page change the volume at all) */
+const LEVEL = {};                                        // song id -> dB to turn it by
+const levelOn = () => canFade && store.get("umc_level", true);
+const lvl = it => levelOn() && it?.nd_id && LEVEL[it.nd_id] != null && !isLong(it) ? Math.min(1, 10 ** (LEVEL[it.nd_id] / 20)) : 1;
+const vol = el => masterVol * lvl(el && el._item);
+async function loadLevels() {
+  if (!levelOn()) return;
+  const ids = pq.slice(pi, pi + 4).filter(x => x?.nd_id && LEVEL[x.nd_id] == null && !isLong(x)).map(x => x.nd_id);
+  if (!ids.length) return;
+  try { const r = await api("/api/loudness?ids=" + ids.join(","));
+    Object.assign(LEVEL, Object.fromEntries(Object.entries(r.songs).map(([k, v]) => [k, v.gain])));
+    const p = $("#player"); if (p._item && LEVEL[p._item.nd_id] != null && !p._fading) try { p.volume = vol(p); } catch (e) {}
+    if (Object.keys(r.songs).length < ids.length) setTimeout(loadLevels, 8000);     // still being measured
+  } catch (e) {}
+}
+function setLevel(on) { store.set("umc_level", on); for (const el of [$("#player"), $("#player2")]) try { el.volume = vol(el); } catch (e) {}
+  toast(on ? "Even volume on: loud songs are turned down to the same level" : "Even volume off"); moreSheet(); }
 function prepNext() {                        // (iPhones only allow one player in the background, so they keep the one)
   const n = pq[pi + 1], sp = $("#player2");
   if (!canFade || !n || repeatMode === "one" || sleepEnd || sp._for === qid(n)) return;
-  sp._for = qid(n); sp.preload = "auto"; sp.src = srcFor(n); sp.load();
+  sp._for = qid(n); sp._item = n; sp.preload = "auto"; sp.src = srcFor(n); sp.load(); try { sp.volume = 0; } catch (e) {}
 }
 function xfadeOK(p) {
   if (!xfade || p._xf || !p.duration || p.duration - p.currentTime > xfade || p.duration < xfade * 3) return false;
@@ -2504,11 +2542,11 @@ function swapPlayers(fade) {
   const old = $("#player"), p = $("#player2");
   for (const k of ["onloadedmetadata", "onplaying", "onpause", "onended", "onerror", "ontimeupdate"]) old[k] = null;
   old.id = "player2"; p.id = "player"; old._for = null; p._for = null; p._xf = false;
-  const done = () => { old.pause(); old.removeAttribute("src"); old.load(); try { old.volume = masterVol; } catch (e) {} };
-  if (!fade || !canFade) { done(); try { p.volume = masterVol; } catch (e) {} return p; }
-  p.volume = 0; let k = 0; const steps = Math.round(fade * 20);
+  const done = () => { old.pause(); old.removeAttribute("src"); old.load(); old._item = null; p._fading = false; try { old.volume = masterVol; } catch (e) {} };
+  if (!fade || !canFade) { done(); try { p.volume = vol(p); } catch (e) {} return p; }
+  p.volume = 0; p._fading = true; let k = 0; const steps = Math.round(fade * 20);
   const t = setInterval(() => { k++; const x = Math.min(1, k / steps);
-    try { p.volume = masterVol * Math.sin(x * Math.PI / 2); old.volume = masterVol * Math.cos(x * Math.PI / 2); } catch (e) {}
+    try { p.volume = vol(p) * Math.sin(x * Math.PI / 2); old.volume = vol(old) * Math.cos(x * Math.PI / 2); } catch (e) {}
     if (x >= 1) { clearInterval(t); done(); } }, 50);
   return p;
 }
@@ -2657,6 +2695,7 @@ function playAt(fade) {
 }
 function bindPlayer(it, startAt) {
   const p = $("#player"); let lastT = 0, lastSave = 0, resumed = !startAt;
+  p._item = it; if (!p._fading) try { p.volume = vol(p); } catch (e) {} loadLevels();
   playedFor = it; it._played = 0;
   p.onloadedmetadata = () => { setTimeout(renderMarks, 0);
     if (p._seekTo != null) { p.currentTime = p._seekTo; p._seekTo = null; resumed = true; }
@@ -2853,6 +2892,9 @@ function moreSheet() {
       <button onclick="openStage('visual')">Visualiser</button>
       <button onclick="sleepSheet()">Sleep timer${sleepLeft() ? ` <span class="muted">· ${sleepLeft()}</span>` : ""}</button>
       <button onclick="clearUpcoming()">Clear the songs after this one</button></div>
+    <h2>Even volume</h2>${canFade ? `<label style="display:flex;gap:10px;align-items:flex-start;margin:0 4px"><input type="checkbox" style="margin-top:3px;width:18px;height:18px;flex:none;accent-color:var(--accent)" ${levelOn() ? "checked" : ""} onchange="setLevel(this.checked)"> <span>Turn loud songs down to the same level as the rest
+      <br><span class="muted" style="font-size:12px">Umculo measures each song once on the server. Music apps like Arpeggi get it too (ReplayGain).</span></span></label>`
+      : `<div class="muted" style="margin:0 4px;font-size:12px">iPhones don't let a web page change the volume, so songs play as they are here. Music apps like Arpeggi can even it out: Umculo sends each song's loudness (ReplayGain).</div>`}
     ${canFade ? `<h2>Crossfade</h2><div class="seg">${[0, 3, 6, 10].map(v => `<button class="${xfade === v ? "on" : ""}" onclick="setXfade(${v})">${v ? v + " s" : "Off"}</button>`).join("")}</div>
       <div class="muted" style="margin:6px 4px 0;font-size:12px">Songs of the same album or mix always flow straight on.</div>` : ""}
     ${isLong(it) ? `<h2>Speed for mixes and episodes</h2><div class="seg">${[0.8, 1, 1.25, 1.5, 2].map(r => `<button class="${sp === r ? "on" : ""}" onclick="setSpeed(${r})">${r}×</button>`).join("")}</div>` : ""}`);
@@ -2875,7 +2917,7 @@ DESK.addEventListener("change", () => {        // the window crossed the desktop
 });
 function setVol(v) {
   masterVol = Math.max(0, Math.min(1, v)); store.set("umc_vol", masterVol);
-  for (const el of [$("#player"), $("#player2")]) try { el.volume = masterVol; } catch (e) {}
+  for (const el of [$("#player"), $("#player2")]) try { el.volume = el.id === "player2" && !el._fading ? 0 : vol(el); } catch (e) {}
   renderMiniDesk();
 }
 function toggleMute() { if (masterVol > 0) { volBefore = masterVol; setVol(0); } else setVol(volBefore || 1); }
@@ -3910,7 +3952,8 @@ async function loadLibrary() {
   const bar = [["lossless","var(--lossless)"],["high","var(--high)"],["ok","var(--ok)"],["low","var(--low)"]].map(([k, c]) => t[k] ? `<i style="width:${t[k] * 100 / tot}%;background:${c}"></i>` : "").join("");
   let h = `<div class="box libhero"><div class="lib-nums"><div><b>${st.songs.toLocaleString()}</b><span>songs</span></div><div><b>${st.albums.toLocaleString()}</b><span>albums</span></div>
       <div><b>${st.artists.toLocaleString()}</b><span>artists</span></div><div><b>${gbs(st.size)}</b><span>${hrs(st.duration)}</span></div></div>
-    ${st.songs ? `<div class="qbar">${bar}</div><div class="chips" style="margin-top:6px">${tierChips({lossless: t.lossless, high: t.high, ok: t.ok, low: t.low})}</div>` : `<div class="muted" style="margin-top:8px">Nothing here yet. Search for a song or an album and get it.</div>`}</div>`;
+    ${st.songs ? `<div class="qbar">${bar}</div><div class="chips" style="margin-top:6px">${tierChips({lossless: t.lossless, high: t.high, ok: t.ok, low: t.low})}</div>` : `<div class="muted" style="margin-top:8px">Nothing here yet. Search for a song or an album and get it.</div>`}
+    ${st.songs && me?.user?.is_admin ? `<div class="row-btns" style="margin-top:10px"><button class="btn small ghost" onclick="openLibrary()">${icon("check", 15)} Library care</button></div>` : ""}</div>`;
   const off = offStore();
   if (Object.keys(off.lists).length) h += `<button class="wrap-card off-card" onclick="openOffline()"><div class="meta"><div class="t">On this phone</div>
       <div class="s">${plural(Object.keys(off.songs).length, "song")} saved · plays without the internet</div></div><span class="wrap-ic">${icon("dl", 22)}</span></button>`;

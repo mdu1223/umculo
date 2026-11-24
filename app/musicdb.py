@@ -352,8 +352,11 @@ def write_songs(batch):
             alb = h("album", lib["id"], fold(t["albumartist"]), fold(t["album"]))
             art = h("artist", lib["id"], fold(primary(t["artist"])))
             aart = h("artist", lib["id"], fold(t["albumartist"]))
-            created = (DB.execute("SELECT created FROM song WHERE id=?", (sid,)).fetchone() or [None])[0] or \
-                (os.path.getmtime(path) if not existed else now)
+            try:                                     # a file can be moved or replaced while the scan runs
+                first_seen = os.path.getmtime(path) if not existed else now
+            except OSError:
+                continue
+            created = (DB.execute("SELECT created FROM song WHERE id=?", (sid,)).fetchone() or [None])[0] or first_seen
             DB.execute("""INSERT OR REPLACE INTO song (id, lib, path, rel, dir, title, artist, album, albumartist, track,
                 disc, year, genre, duration, bitrate, samplerate, bitdepth, channels, suffix, size, mtime, created,
                 album_id, artist_id, albumartist_id, art, search, mbid, lyrics, extra) VALUES

@@ -183,6 +183,10 @@ def song(r, a=None):
     ex = extra(r)
     if ex.get("rg"):
         d["replayGain"] = ex["rg"]
+    elif "path" in r.keys():                         # no ReplayGain tags: Umculo's own measurement (even volume)
+        rg = core.loudness.replaygain(r["path"])
+        if rg:
+            d["replayGain"] = rg
     for k, key in (("bpm", "bpm"), ("sort", "sortName"), ("comment", "comment")):
         if ex.get(k):
             d[key] = ex[k]
@@ -289,7 +293,7 @@ def prepare(r, kbps, out_fmt="mp3"):
             os.replace(tmp, final)
             return final
         except Exception as e:  # noqa: BLE001
-            log("converting for the player failed:", r["path"], e)
+            core.log("converting for the player failed:", r["path"], e)
             if os.path.exists(tmp):
                 os.remove(tmp)
             return None

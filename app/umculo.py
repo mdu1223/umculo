@@ -54,6 +54,7 @@ import importers  # noqa: E402
 import video  # noqa: E402
 import songvideo  # noqa: E402
 import versions  # noqa: E402
+import loudness  # noqa: E402
 import chapters  # noqa: E402
 import radio  # noqa: E402
 import cast  # noqa: E402
@@ -70,7 +71,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.7.0"
+VERSION = "3.8.0"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2060,9 +2061,17 @@ def _process_track(job, tr):
         picks = pick_auto(cands, cur_rank)
         below = []
         fast = bool(job.get("fast"))                 # songs from a mix you're playing: now beats perfect
+        tr["_only_good"] = False
         if not CONFIG["best_effort"] and not fast:   # only your quality: wait for it rather than settle
             below = [c for c in picks if not good_enough(cscore(c))]
-            picks = [c for c in picks if good_enough(cscore(c))]
+            good = [c for c in picks if good_enough(cscore(c))]
+            if good and below and tr.get("good_fails", 0) >= 1:
+                # every copy in your quality failed last time (stuck in a queue, refused, timed out): try them
+                # again, with the best of the rest joining after the head start; a better copy is looked for later
+                picks = good + below
+            else:
+                picks = good
+                tr["_only_good"] = bool(good and below)
         if job.get("cancel"):
             tr_set(job, tr, state="cancelled")
             return
@@ -2106,6 +2115,8 @@ def _process_track(job, tr):
               + (" · will look for a better copy later" if later else ""), best["tier"], later)
     except Exception as e:  # noqa: BLE001
         log("playlist track failed:", tr.get("artist"), "-", tr.get("title"), ":", e)
+        if tr.get("_only_good"):
+            tr["good_fails"] = tr.get("good_fails", 0) + 1
         tr_set(job, tr, state="failed", message=str(e)[:200], last_try=time.time())
 
 
@@ -2552,7 +2563,7 @@ class Handler(BaseHTTPRequestHandler):
             if out is None:
                 out = listening.handle_get(u.path, qs) or cook.handle_get(u.path, qs) or mixtidy.handle("GET", u.path) or likes.handle_get(u.path, qs) or chapters.handle_get(u.path, qs) or radio.handle_get(u.path, qs) or cast.handle_get(u.path, qs) or party.handle_get(u.path, qs) or notify_people.handle_get(u.path, qs) or gigs.handle_get(u.path, qs) or alarms.handle_get(u.path, qs) or inbox.handle_get(u.path, qs)
             if out is None:
-                out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs) or versions.handle_get(u.path, qs)
+                out = (foryou.handle_get(u.path, qs) or library.handle_get(u.path, qs) or status.handle_get(u.path, qs) or versions.handle_get(u.path, qs) or loudness.handle_get(u.path, qs)
                        or share.handle_get(u.path, qs) or playlists.handle_get(u.path, qs) or recipes.handle_get(u.path, qs)
                        or artists.handle_get(u.path, qs) or users.handle_get(u.path, qs) or libview.handle_get(u.path, qs)
                        or connectors.handle_get(u.path, qs))
@@ -2836,6 +2847,7 @@ def main():
     video.init(sys.modules[__name__])
     songvideo.init(sys.modules[__name__])
     versions.init(sys.modules[__name__])
+    loudness.init(sys.modules[__name__])
     chapters.init(sys.modules[__name__])
     radio.init(sys.modules[__name__])
     cast.init(sys.modules[__name__])

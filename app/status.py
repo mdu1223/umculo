@@ -143,18 +143,34 @@ def restart_slskd(why):
         if not token:
             raise LookupError("slskd didn't accept its saved login: enter it again in Settings > Connectors > Soulseek")
         core.http("PUT", f"{base}/api/v0/application", {}, {"Authorization": f"Bearer {token}"}, timeout=20, retries=0)
-    SLSK_WATCH.update(restarted_at=time.time(), broken=False, canary_at=0)
+    SLSK_WATCH.update(restarted_at=time.time(), broken=False, canary_at=0, fails=0)
     core.SLSK.update(empty_streak=0, pause_until=0)
     core.log(f"Soulseek: restarted slskd ({why})")
     return "slskd is restarting: Soulseek is back in about a minute"
 
 
 def canary_ok():
-    """A search for a song nearly everyone shares: an empty answer means slskd is connected but not working."""
+    """A search for a song nearly everyone shares. -> True (answers), False (an empty answer: connected but not
+    working), None (an error: not evidence either way)."""
     try:
-        return bool(core._slskd_search(CANARY, seconds=12))
+        return bool(core._slskd_search(CANARY, seconds=15))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def downloading():
+    """Is slskd moving a download right now? Then it works, whatever the searches say."""
+    try:
+        users = core.http("GET", f"{core.CONFIG['slskd']}/api/v0/transfers/downloads", headers=core.slskd_headers(),
+                          timeout=10, retries=0) or []
     except Exception:  # noqa: BLE001
         return False
+    for u in users:
+        for d in u.get("directories") or []:
+            for f in d.get("files") or []:
+                if "InProgress" in (f.get("state") or ""):
+                    return True
+    return False
 
 
 def slsk_watch():
@@ -176,12 +192,18 @@ def slsk_watch():
                     suspect = core.SLSK["empty_streak"] >= SUSPECT_AFTER or (SLSK_WATCH.get("check_after") and now > SLSK_WATCH["check_after"])
                     if suspect and now - SLSK_WATCH.get("canary_at", 0) > CANARY_EVERY:
                         SLSK_WATCH.update(canary_at=now, check_after=0)
-                        if canary_ok():
-                            SLSK_WATCH["broken"] = False
+                        ok = canary_ok()
+                        if ok is None:
+                            pass                             # an error, not an empty answer: try again later
+                        elif ok or downloading():
+                            SLSK_WATCH.update(broken=False, fails=0)
                             core.SLSK["empty_streak"] = 0
                         else:
+                            SLSK_WATCH["fails"] = SLSK_WATCH.get("fails", 0) + 1
                             SLSK_WATCH["broken"] = True
-                            if can_restart() and now - SLSK_WATCH.get("restarted_at", 0) > RESTART_EVERY:
+                            if SLSK_WATCH["fails"] < 2:          # once could be Soulseek being busy: check again soon
+                                SLSK_WATCH["canary_at"] = now - CANARY_EVERY + min(180, CANARY_EVERY)
+                            elif can_restart() and now - SLSK_WATCH.get("restarted_at", 0) > RESTART_EVERY:
                                 try:
                                     restart_slskd("connected, but even a search for a well-known song found nothing")
                                 except Exception as ex:  # noqa: BLE001

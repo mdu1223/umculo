@@ -130,11 +130,11 @@ def best_lag(a, b):
     return k, z
 
 
-def fit(a, b):
+def fit(a, b, shortest=None):
     """Where a fits best inside b: (lag in frames, how the peak stands out (std devs), how alike they are there (0-1))."""
     a, b = _z(a), _z(b)
     n = len(a)
-    if n < FPS * 10 or len(b) < n:
+    if n < (shortest or FPS * 10) or len(b) < n:
         return 0, 0.0, 0.0
     scores = []
     for k in range(0, len(b) - n + 1):
@@ -144,6 +144,52 @@ def fit(a, b):
     m = sum(scores) / len(scores)
     s = math.sqrt(sum((v - m) ** 2 for v in scores) / len(scores)) or 1.0
     return k, (scores[k] - m) / s, scores[k]
+
+
+def pearson(x, y):
+    n = len(x)
+    if not n:
+        return 0.0
+    mx, my = sum(x) / n, sum(y) / n
+    sxy = sxx = syy = 0.0
+    for p, q in zip(x, y):
+        dp, dq = p - mx, q - my
+        sxy += dp * dq
+        sxx += dp * dp
+        syy += dq * dq
+    return sxy / math.sqrt(sxx * syy) if sxx and syy else 0.0
+
+
+def stretch(a, f):
+    """The loudness changes as they'd be played f times as long (f > 1: slower)."""
+    n, out = int(len(a) * f), []
+    for i in range(n):
+        x = i / f
+        j = int(x)
+        t = x - j
+        out.append(a[j] * (1 - t) + a[min(j + 1, len(a) - 1)] * t if j < len(a) else a[-1])
+    return out
+
+
+def same_recording(a, b, size=None):
+    """How surely the bit a (a preview) is in b (a whole song), 0-1, allowing up to 3% speed difference
+    (copies of older songs often play a fraction faster or slower than the catalogue's master)."""
+    size = size or FPS * 5
+    starts = set()
+    for i in range(max(1, len(a) // size)):                  # where it roughly is: each 5-second piece's best spot
+        k, _z, _r = fit(a[i * size:(i + 1) * size], b, FPS * 3)
+        starts.add(k - i * size)
+    best = 0.0
+    for s0 in starts:
+        for step in range(-12, 13):                          # then every speed from 3% slower to 3% faster, near there
+            f = 1 + step * 0.0025
+            af = stretch(a, f)
+            n = len(af)
+            for lag in range(max(0, int(s0 * f) - 8), min(len(b) - n, int(s0 * f) + 9) + 1):
+                r = pearson(af, b[lag:lag + n])
+                if r > best:
+                    best = r
+    return best
 
 
 def align(song, video, song_dur, video_dur, headers=None):
