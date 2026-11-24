@@ -20,6 +20,7 @@ for name, vol in (("Loud One", "0dB"), ("Quiet One", "-24dB")):
 web(f"/rest/startScan.view?{AUTH}")
 for _ in range(60):
     hits = (web(f"/rest/search3.view?{AUTH}&query=Loudbeat&songCount=9").get("subsonic-response", {}).get("searchResult3") or {}).get("song") or []
+    hits = [h for h in hits if h.get("artist") == "Loudbeat"]          # not the catalogue's suggestions
     if len(hits) >= 2: break
     time.sleep(0.5)
 check(len(hits) >= 2, "the two songs are in the library")
