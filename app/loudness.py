@@ -30,12 +30,14 @@ def measure(path):
         p = subprocess.run(["nice", "-n", "15", "ffmpeg", "-nostats", "-hide_banner", "-i", path, "-vn",
                             "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
                            capture_output=True, text=True, timeout=600)
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as ex:
+        core.log("even volume: couldn't measure", os.path.basename(path), ex)
         return None
     out = p.stderr or ""
     i = re.findall(r"I:\s*(-?\d+(?:\.\d+)?)\s*LUFS", out)
     pk = re.findall(r"Peak:\s*(-?\d+(?:\.\d+)?|-inf)\s*dBFS", out)
     if not i:
+        core.log("even volume: couldn't measure", os.path.basename(path), (out.strip().splitlines() or ["?"])[-1][:200])
         return None
     lufs = float(i[-1])
     peak = float(pk[-1]) if pk and pk[-1] != "-inf" else 0.0
@@ -45,6 +47,7 @@ def measure(path):
 
 
 def known(path):
+    """The measurement for this file as it is now (or a note that it couldn't be measured), else None."""
     d = DATA.get(path)
     if not d:
         return None
@@ -56,6 +59,10 @@ def known(path):
     return d
 
 
+def usable(d):
+    return d and d.get("lufs") is not None
+
+
 def gain_db(d, target=TARGET):
     """How much to turn this song up or down to reach target, without going over its true peak (-1 dBTP)."""
     g = target - d["lufs"]
@@ -65,7 +72,7 @@ def gain_db(d, target=TARGET):
 def replaygain(path):
     """For music apps: ReplayGain values worked out from the measurement (None if not measured yet)."""
     d = known(path)
-    if not d:
+    if not usable(d):
         return None
     return {"trackGain": round(RG_REF - d["lufs"], 2), "trackPeak": round(10 ** (d["peak"] / 20), 4)}
 
@@ -79,14 +86,13 @@ def save():
 def one(path):
     STATE["current"] = os.path.basename(path)
     m = measure(path)
-    if m:
-        try:
-            mt = os.path.getmtime(path)
-        except OSError:
-            return
-        with LOCK:
-            DATA[path] = {"lufs": round(m[0], 2), "peak": round(m[1], 2), "mtime": mt}
-        STATE["done"] += 1
+    try:
+        mt = os.path.getmtime(path)
+    except OSError:
+        return
+    with LOCK:                                       # a song that can't be measured isn't tried again until it changes
+        DATA[path] = {"lufs": round(m[0], 2), "peak": round(m[1], 2), "mtime": mt} if m else {"lufs": None, "mtime": mt}
+    STATE["done"] += 1
 
 
 def loop():
@@ -132,9 +138,9 @@ def for_ids(ids):
         if not r:
             continue
         d = known(r["path"])
-        if d:
+        if usable(d):
             out[sid] = {"gain": gain_db(d), "lufs": d["lufs"]}
-        else:
+        elif not d:
             with LOCK:
                 if r["path"] not in WANT:
                     WANT.append(r["path"])

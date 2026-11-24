@@ -42,5 +42,8 @@ rg = g.get("replayGain") or {}
 check(isinstance(rg.get("trackGain"), (int, float)) and rg["trackGain"] < 0, f"music apps get ReplayGain {rg}")
 check(0 < rg.get("trackPeak", 0) < 4, f"with the peak {rg}")
 check(web("/api/loudness?ids=nope").get("songs") == {}, "an unknown song is just left out")
+if bad:
+    try: print("".join(l for l in open(os.path.join(S, "app.log")) if "even volume" in l)[-1500:])
+    except OSError: pass
 print(("V33 OK %d" % n) if not bad else ("V33 FAILED %d/%d" % (len(bad), n)))
 sys.exit(1 if bad else 0)

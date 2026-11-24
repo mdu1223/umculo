@@ -7,9 +7,9 @@ run() {  # name, port, command...
   local name=$1 port=$2; shift 2; local S=$OUT/$name
   bash test/v20_env.sh "$S" "$port" >/dev/null 2>&1
   for i in $(seq 60); do grep -q "library scan" "$S/app.log" 2>/dev/null && break; sleep 0.5; done
-  local r; r=$("$@" "$S" 2>&1 | grep -v "^Unclosed\|^client_session" | tail -1)
+  local all r; all=$("$@" "$S" 2>&1 | grep -v "^Unclosed\|^client_session"); r=$(echo "$all" | tail -1)
   kill $(cat "$S/pids" 2>/dev/null) 2>/dev/null; sleep 1
-  case "$r" in *OK*) echo "PASS $name: $r";; *) echo "FAIL $name: $r"; FAIL=1;; esac
+  case "$r" in *OK*) echo "PASS $name: $r";; *) echo "FAIL $name: $r"; echo "$all" | tail -40 | sed 's/^/    /'; FAIL=1;; esac
 }
 python3 test/page_check.py || FAIL=1
 run api      8098 python3 test/v20_api.py 8098 mdu ndpass
