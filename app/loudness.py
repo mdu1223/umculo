@@ -29,7 +29,7 @@ def measure(path):
     try:
         p = subprocess.run(["nice", "-n", "15", "ffmpeg", "-nostdin", "-nostats", "-hide_banner", "-i", path, "-vn",
                             "-af", "ebur128=peak=true:framelog=verbose", "-f", "null", "-"],
-                           capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)
+                           capture_output=True, text=True, errors="replace", timeout=600, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired) as ex:
         core.log("even volume: couldn't measure", os.path.basename(path), ex)
         return None
@@ -116,7 +116,10 @@ def loop():
                 with LOCK:
                     path = WANT.pop(0) if WANT else todo.pop(0)
                 if not known(path) and os.path.exists(path):
-                    one(path)
+                    try:
+                        one(path)
+                    except Exception as ex:  # noqa: BLE001  (one odd file mustn't stop the rest)
+                        core.log("even volume: skipped", os.path.basename(path), ex)
                     n += 1
                     if n % 25 == 0:
                         save()

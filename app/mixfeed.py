@@ -115,14 +115,17 @@ def yt_search(q, n=14, newest=True):
         return fake(q)
 
     def run(kind):
-        with core._ydl({"extract_flat": True}) as y:
-            info = y.extract_info(f"{kind}{n}:{q}", download=False) or {}
-        return [yt_item(e) for e in info.get("entries") or [] if e and e.get("id")]
+        # newest first: YouTube's own search page sorted by upload date (yt-dlp dropped "ytsearchdate" in 2026.11)
+        where = (f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(q)}&sp=CAI%253D"
+                 if kind == "newest" else f"ytsearch{n}:{q}")
+        with core._ydl({"extract_flat": True, "playlistend": n}) as y:
+            info = y.extract_info(where, download=False) or {}
+        return [yt_item(e) for e in (info.get("entries") or [])[:n] if e and e.get("id")]
     if not newest:
-        return run("ytsearch")
+        return run("best")
     import concurrent.futures as cf
     with cf.ThreadPoolExecutor(max_workers=2) as pool:
-        best, new = pool.submit(run, "ytsearch"), pool.submit(run, "ytsearchdate")
+        best, new = pool.submit(run, "best"), pool.submit(run, "newest")
         out, seen = [], set()
         for fut in (new, best):
             try:

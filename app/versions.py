@@ -19,7 +19,8 @@ import time
 core = None
 LOCK = threading.Lock()
 RESULTS = {}              # path -> {"verdict": "ok"/"wrong"/"unsure"/"none", "z", "mtime", "at", "artist", "title"}
-METHOD = 3                # how the check works: results from an older way are checked again
+OK_SINCE = 3              # "right" from this method on stays right (later methods only check more releases)
+METHOD = 4                # how the check works: results from an older way are checked again
 SCAN = {"running": False, "done": 0, "total": 0, "wrong": 0, "started": 0, "current": ""}
 # how surely the preview is in the file (0-1, allowing for a copy playing up to 3% fast or slow): measured on real
 # library files against catalogue previews, the same recording scores 0.74-0.97 (0.74: a pressing 2.8% fast),
@@ -36,13 +37,20 @@ def norm(t):
 
 def catalogue(artist, title, duration=0):
     """The catalogue's own recording of this song (Deezer), with its preview."""
+    c = candidates(artist, title, duration)
+    return c[0] if c else None
+
+
+def candidates(artist, title, duration=0, n=3):
+    """The catalogue's releases of this song, best first (the same title can be several recordings: an album take,
+    a compilation's re-recording...). Different preview files only."""
     sv = core.songvideo
     a, t = sv.main_artist(artist), sv.core_title(title, artist)
     try:
         hits = core.deezer_search(f"{a} {t}", 10)
     except Exception:  # noqa: BLE001
         return None
-    best, best_score = None, -1
+    scored = []
     for h in hits:
         if not h.get("preview") or norm(t) not in norm(h["title"]) or norm(a) not in norm(h["artist"]):
             continue
@@ -53,9 +61,15 @@ def catalogue(artist, title, duration=0):
         s = 10 - (abs(h["duration"] - duration) / 10 if duration and h.get("duration") else 0)
         if norm(h["title"]) == norm(t):
             s += 3
-        if s > best_score:
-            best, best_score = h, s
-    return best
+        scored.append((s, h))
+    scored.sort(key=lambda x: -x[0])
+    out, seen = [], set()
+    for _s, h in scored:
+        f = h["preview"].split("?")[0]
+        if f not in seen:
+            seen.add(f)
+            out.append(h)
+    return out[:n]
 
 
 def by_id(deezer_id):
@@ -95,16 +109,24 @@ def compare(path, preview_url):
 
 def check(path, artist, title, duration=0, preview="", deezer_id=None):
     """Is this file the catalogue's recording? -> (verdict, how sure, catalogue entry or None)."""
-    cat = (by_id(deezer_id) if deezer_id else None) or ({"preview": preview} if preview else None) \
-        or catalogue(artist, title, duration)
-    if not cat or not cat.get("preview"):
+    first = (by_id(deezer_id) if deezer_id else None) or ({"preview": preview} if preview else None)
+    cats = ([first] if first else []) + [c for c in candidates(artist, title, duration)
+                                         if not first or c["preview"].split("?")[0] != first["preview"].split("?")[0]]
+    cats = [c for c in cats if c and c.get("preview")][:3]
+    if not cats:
         return "none", 0.0, None
-    try:
-        v, z = compare(path, cat["preview"])
-    except Exception as ex:  # noqa: BLE001
-        core.log("version check failed:", title, ex)
-        return "none", 0.0, cat
-    return v, z, cat
+    best = ("none", 0.0, cats[0])
+    for cat in cats:                     # right if it's any of the catalogue's releases of this song
+        try:
+            v, z = compare(path, cat["preview"])
+        except Exception as ex:  # noqa: BLE001
+            core.log("version check failed:", title, ex)
+            continue
+        if v == "ok":
+            return v, z, cat
+        if z > best[1] or best[0] == "none":
+            best = (v, z, cat)
+    return best
 
 
 def check_download(path, target):
@@ -153,13 +175,13 @@ def run_scan(user):
             except OSError:
                 continue
             k = RESULTS.get(r["path"])
-            if k and k.get("method", 1) < METHOD:
+            if k and k.get("method", 1) < METHOD and not current_ok(k):
                 k = None
             if k and k.get("mtime") == mt and (k.get("verdict") in ("ok", "wrong", "dismissed")
                                                or time.time() - k.get("at", 0) < 7 * 86400):   # unsure: again in a week
                 continue
             todo.append((r, mt))
-        SCAN.update(total=len(todo), done=0, wrong=sum(1 for v in RESULTS.values() if v.get("verdict") == "wrong"))
+        SCAN.update(total=len(todo), done=0)
         for r, mt in todo:
             if not SCAN["running"]:
                 break
@@ -170,21 +192,25 @@ def run_scan(user):
                                       "artist": r["artist"], "title": r["title"], "duration": r["duration"],
                                       "catalogue": (cat or {}).get("album", ""), "cat_duration": (cat or {}).get("duration", 0)}
             SCAN["done"] += 1
-            if v == "wrong":
-                SCAN["wrong"] += 1
             if SCAN["done"] % 20 == 0:
                 save()
         save()
-        core.log(f"wrong versions: checked {SCAN['done']} songs, {SCAN['wrong']} look like another version")
+        SCAN["wrong"] = len(view()["suspects"])
+        core.log(f"wrong versions: checked {SCAN['done']} songs; {SCAN['wrong']} in the library look like another version")
     finally:
         SCAN.update(running=False, current="")
+
+
+def current_ok(v):
+    return v.get("verdict") in ("ok", "dismissed") and v.get("method", 1) >= OK_SINCE
 
 
 def view():
     with LOCK:
         wrong = [{"path": p, **v} for p, v in RESULTS.items() if v.get("verdict") == "wrong" and v.get("method", 1) >= METHOD
                  and os.path.exists(p)]
-        checked = sum(1 for v in RESULTS.values() if v.get("verdict") in ("ok", "wrong", "dismissed") and v.get("method", 1) >= METHOD)
+        checked = sum(1 for v in RESULTS.values() if (v.get("verdict") in ("ok", "wrong", "dismissed") and v.get("method", 1) >= METHOD)
+                      or current_ok(v))
     wrong.sort(key=lambda x: (x.get("artist") or "").lower())
     return {**SCAN, "checked": checked, "suspects": [{k: x.get(k) for k in ("id", "artist", "title", "duration", "z", "catalogue",
                                                                          "cat_duration", "fixing")} for x in wrong]}
@@ -250,7 +276,7 @@ def init(umculo):
     global core
     core = umculo
     RESULTS.update(core._load_json("versions.json", {}) or {})
-    if any(v.get("method", 1) < METHOD for v in RESULTS.values()) and os.environ.get("UMCULO_TEST_VERSIONS") != "off":
+    if any(v.get("method", 1) < METHOD and not current_ok(v) for v in RESULTS.values()) and os.environ.get("UMCULO_TEST_VERSIONS") != "off":
         threading.Thread(target=recheck_later, daemon=True).start()
 
 

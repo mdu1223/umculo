@@ -566,6 +566,11 @@ def parse_tracklist(text, chapters=None):
     return out if len(out) >= 2 else []
 
 
+# How far a match may be sped up or pitched (Shazam reports it as the match's skew). DJs move songs 1-6% to match
+# tempos; 0.01 threw away 10 of 18 right answers in a real mix. Wrong answers mostly carry a far bigger skew.
+MAX_SKEW = 0.08
+
+
 def recognizer():
     """-> function(wav_bytes, offset) -> (artist, title) or None"""
     if CFG["test_shazam"]:
@@ -588,7 +593,7 @@ def recognizer():
 
     def rec(wav, _off):
         try:
-            res = loop.run_until_complete(asyncio.wait_for(shz.recognize(wav, max_skew=0.01), 25))
+            res = loop.run_until_complete(asyncio.wait_for(shz.recognize(wav, max_skew=MAX_SKEW), 25))
         except Exception as ex:  # noqa: BLE001
             if "ratelimit" in type(ex).__name__.lower() or "429" in str(ex):
                 raise Throttled() from ex
