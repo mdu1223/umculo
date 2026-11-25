@@ -48,9 +48,14 @@ class _Core: song_key = staticmethod(lambda a, t: (a.lower(), t.lower()))
 g["core"] = _Core
 fp = g["first_pass"](3600, 60)
 check(len(fp) == 20 and fp[0] == 30 and fp[1] - fp[0] == 180, f"the first pass covers an hour in 20 bits {fp[:3]} {len(fp)}")
+exec(re.search(r"(def same.*?\n\n\n)", src, re.S).group(1), g)
 res = {30: ("A", "One"), 210: ("A", "One"), 390: ("B", "Two"), 570: None, 750: ("C", "Three")}
-check(g["refine"](res, 60) == [300, 480, 660], f"listen again only where the song changes {g['refine'](res, 60)}")
-check(g["refine"]({30: ("A", "1"), 120: ("B", "2")}, 60) == [], "not closer than 90 seconds")
+r1 = g["refine"](res, 60, 800, 1)
+check(r1 == [270, 330, 450, 510, 630, 690], f"round 1: a bit a minute, not inside one song {r1}")
+res.update({o: ("B", "Two") for o in (270, 330, 450)}); res.update({510: None, 630: ("C", "Three"), 690: ("C", "Three")})
+r2 = g["refine"](res, 60, 800, 2)
+check(r2 == [240, 480, 540, 600], f"round 2: halfway where the song changes or nothing was heard {r2}")
+check(g["refine"](res, 60, 800, 3) == [], "two rounds, then done")
 # music videos: official ones only, and lined up with your copy (or not at all)
 import importlib.util
 _sp = importlib.util.spec_from_file_location("sv", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "songvideo.py"))
