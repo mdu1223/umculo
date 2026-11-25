@@ -26,8 +26,10 @@ RUN mkdir -p /opt/tools && cd /opt/tools && npm init -y >/dev/null && npm instal
  && npx playwright install --with-deps chromium && chmod -R a+rX /opt/tools
 
 RUN useradd -m -u 1000 -s /bin/bash claude && mkdir -p /work /deploy && chown claude:claude /work /deploy
-COPY --chmod=755 bin/ /usr/local/bin/
+COPY bin/ /usr/local/bin/
 COPY worker-CLAUDE.md review-prompt.md /opt/worker/
+RUN chmod 755 /usr/local/bin/worker-start /usr/local/bin/worker-setup /usr/local/bin/umculo-deploy /usr/local/bin/umculo-review \
+ && chmod -R a+rX /opt/worker
 
 USER claude
 WORKDIR /work
