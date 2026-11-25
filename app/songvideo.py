@@ -14,6 +14,7 @@ answer is remembered with the mixes' video sources (video.SRC).
 import array
 import concurrent.futures as cf
 import math
+import operator
 import os
 import re
 import subprocess
@@ -171,24 +172,67 @@ def stretch(a, f):
     return out
 
 
-def same_recording(a, b, size=None):
-    """How surely the bit a (a preview) is in b (a whole song), 0-1, allowing up to 3% speed difference
-    (copies of older songs often play a fraction faster or slower than the catalogue's master)."""
-    size = size or FPS * 5
-    starts = set()
-    for i in range(max(1, len(a) // size)):                  # where it roughly is: each 5-second piece's best spot
-        k, _z, _r = fit(a[i * size:(i + 1) * size], b, FPS * 3)
-        starts.add(k - i * size)
+def smooth(x, w):
+    """Blur the loudness changes a little (w frames), so tiny timing differences between two encodings don't count."""
+    k = [math.exp(-0.5 * (i / w) ** 2) for i in range(-3 * w, 3 * w + 1)]
+    t = sum(k)
+    k = [v / t for v in k]
+    h, n = 3 * w, len(x)
+    return [sum(k[j] * x[i + j - h] for j in range(len(k)) if 0 <= i + j - h < n) for i in range(n)]
+
+
+def scan(a, b, lags=None):
+    """How alike a is to each stretch of b (Pearson, each stretch on its own terms) -> {lag: r}."""
+    n = len(a)
+    if not n or len(b) < n:
+        return {}
+    m = sum(a) / n
+    sd = math.sqrt(sum((v - m) ** 2 for v in a) / n) or 1.0
+    a = [(v - m) / sd for v in a]
+    cs, cs2 = [0.0], [0.0]
+    for v in b:
+        cs.append(cs[-1] + v)
+        cs2.append(cs2[-1] + v * v)
+    out = {}
+    for k in (range(len(b) - n + 1) if lags is None else [k for k in lags if 0 <= k <= len(b) - n]):
+        mb = (cs[k + n] - cs[k]) / n
+        var = (cs2[k + n] - cs2[k]) / n - mb * mb
+        if var <= 1e-9:
+            continue
+        out[k] = sum(map(operator.mul, a, b[k:k + n])) / n / math.sqrt(var)
+    return out
+
+
+def same_recording(a, b):
+    """How surely the preview a is part of the song b, 0-1, allowing up to 3% speed difference
+    (copies of older songs often play a fraction faster or slower than the catalogue's master).
+    a is a whole catalogue preview: its first 2 seconds fade in, which would look like loud beats, so they're left out."""
+    a = a[FPS * 2: FPS * 28]
+    if len(a) < FPS * 10 or len(b) < len(a):
+        return 0.0
+    # 1. roughly where (blurred, at half the detail, a few speeds): the best few places
+    def half(x):
+        return [(x[i] + x[i + 1]) / 2 for i in range(0, len(x) - 1, 2)]
+    ca, cb = half(smooth(a, 2)), half(smooth(b, 2))
+    rough = []
+    for f in (0.98, 1.0, 1.02):
+        rough += [(r, k * 2) for k, r in scan(stretch(ca, f), cb).items()]
+    rough.sort(reverse=True)
+    places = []
+    for _r, k in rough:
+        if all(abs(k - p) > FPS for p in places):
+            places.append(k)
+        if len(places) == 4:
+            break
+    # 2. exactly: every speed from 3% slower to 3% faster, near those places
+    fa, fb = smooth(a, 1), smooth(b, 1)
     best = 0.0
-    for s0 in starts:
-        for step in range(-12, 13):                          # then every speed from 3% slower to 3% faster, near there
-            f = 1 + step * 0.0025
-            af = stretch(a, f)
-            n = len(af)
-            for lag in range(max(0, int(s0 * f) - 8), min(len(b) - n, int(s0 * f) + 9) + 1):
-                r = pearson(af, b[lag:lag + n])
-                if r > best:
-                    best = r
+    for step in range(-12, 13):
+        af = stretch(fa, 1 + step * 0.0025)
+        for p in places:
+            got = scan(af, fb, range(p - 12, p + 13))
+            if got:
+                best = max(best, max(got.values()))
     return best
 
 

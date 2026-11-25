@@ -19,12 +19,12 @@ import time
 core = None
 LOCK = threading.Lock()
 RESULTS = {}              # path -> {"verdict": "ok"/"wrong"/"unsure"/"none", "z", "mtime", "at", "artist", "title"}
-METHOD = 2                # how the check works: results from an older way are checked again
+METHOD = 3                # how the check works: results from an older way are checked again
 SCAN = {"running": False, "done": 0, "total": 0, "wrong": 0, "started": 0, "current": ""}
 # how surely the preview is in the file (0-1, allowing for a copy playing up to 3% fast or slow): measured on real
-# songs, the same recording scores 0.63-1.0, karaoke, re-recordings, remixes and other songs 0.20-0.49.
-# Between the two: unsure, and left alone.
-SAME, DIFFERENT = 0.62, 0.45
+# library files against catalogue previews, the same recording scores 0.74-0.97 (0.74: a pressing 2.8% fast),
+# other versions (an instrumental, a different edit) and other songs 0.26-0.49. Between the two: unsure, left alone.
+SAME, DIFFERENT = 0.68, 0.58
 NOT_THE_REAL_ONE = re.compile(r"karaoke|tribute|originally performed|made popular|in the style of|re-?recorded|"
                               r"alternate|8-bit|cover|instrumental|live|remix|acoustic|sped up|slowed|"
                               r"version\)?\s*$", re.I)
@@ -84,7 +84,7 @@ def compare(path, preview_url):
         b = sv.onsets(path, 0, min(dur or 900, 900) + 2)
         if len(b) < sv.FPS * 30 or len(a) < sv.FPS * 20:
             return "none", 0.0
-        r = sv.same_recording(a[: sv.FPS * 25], b)
+        r = sv.same_recording(a, b)
         return ("ok" if r >= SAME else "wrong" if r < DIFFERENT else "unsure"), round(r, 2)
     finally:
         try:

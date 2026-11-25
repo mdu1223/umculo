@@ -12,6 +12,7 @@ run() {  # name, port, command...
   case "$r" in *OK*) echo "PASS $name: $r";; *) echo "FAIL $name: $r"; echo "$all" | tail -40 | sed 's/^/    /'; FAIL=1;; esac
 }
 python3 test/page_check.py || FAIL=1
+if python3 test/unit_same_recording.py >/dev/null 2>&1; then echo "PASS same-recording"; else echo "FAIL same-recording"; FAIL=1; fi
 run api      8098 python3 test/v20_api.py 8098 mdu ndpass
 run family   8099 python3 test/v20_family.py 8099
 run api21    8100 python3 test/v21_api.py 8100 mdu ndpass
