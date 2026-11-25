@@ -21,7 +21,7 @@
 - **Playlists that stay in sync.** Paste a Spotify or Apple Music playlist link and Umculo builds it from your library and your sources, then keeps it up to date.
 - **For You.** Weekly mix, "because you play…", rediscover old favourites, follow artists and get their new releases.
 - **DJ mixes and podcasts.** Subscribe to shows, and Umculo can recognise the songs in a mix.
-- **What's playing in the mix.** The song finder lists every song in a DJ mix with its time; the player shows the song playing now and jumps to any of them. Works on mixes already in your library too.
+- **What's playing in the mix.** The song finder lists every song in a DJ mix with its time; the player shows the song playing now and jumps to any of them. Works on mixes already in your library too. Mixes that found few songs can be searched again (one at a time, or all of them from the song finder list), and any mix in your library can be deleted from its window.
 - **Radio.** Type an artist, a style, a mood or an era ("Kwaito from the 90s", "chill sunday", "Kabza De Small") and it plays forever: your songs first, new ones mixed in.
 - **Even volume.** Umculo measures how loud every song is (EBU R128, once, in the background; songs coming up next first). The web player turns loud songs down to the same level on computers and Android, and music apps like Arpeggi get it as ReplayGain when a file has none of its own. Your files aren't changed. (iPhones don't let a web page change the volume, so the iPhone web app plays songs as they are.)
 - **Gapless and crossfade.** The next song is ready before this one ends; crossfade is a setting (an album or mix always flows straight on).

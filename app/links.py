@@ -797,11 +797,23 @@ def page_tracklist(page):
                                            for c in info.get("chapters") or []]
 
 
-def start_local_find(path, title, show, duration, cover="", page="", get=None):
-    """The song finder on a mix that's already in your library: chapters for the player."""
+def start_local_find(path, title, show, duration, cover="", page="", get=None, again=False):
+    """The song finder on a mix that's already in your library: chapters for the player.
+    again=True listens to it once more (the finder got better, or found little); the earlier result stays until the new
+    one is done, then the two are merged."""
     owner = core.users.me_key()
+    replaces = []
     with LOCK:
-        for f in FINDS.values():
+        mine_here = [f for f in FINDS.values() if f.get("file") == path and (f.get("owner") or "admin") == owner]
+        busy = next((f for f in mine_here if f["state"] in ("queued", "downloading", "listening")), None)
+        if again and busy:
+            return busy["id"]                        # already listening to it
+        if again:
+            replaces = [f["id"] for f in mine_here]
+            get = any(f.get("get") for f in mine_here) if get is None else get
+            cover = cover or next((f.get("cover") for f in mine_here if f.get("cover")), "")
+            page = page or next(((f.get("entry") or {}).get("page") for f in mine_here if (f.get("entry") or {}).get("page")), "")
+        for f in ([] if again else FINDS.values()):
             if f.get("file") == path and f["state"] != "failed" and (f.get("owner") or "admin") == owner \
                     and not (f["state"] == "done" and not f.get("tracks")):      # found nothing last time: try again
                 if get and not f.get("get"):
@@ -815,7 +827,7 @@ def start_local_find(path, title, show, duration, cover="", page="", get=None):
          "message": "Waiting its turn", "tracks": [], "created": time.time(), "keep": False, "auto": False, "local": path,
          "file": path, "show_data": {"kind": "single", "podcast": False, "title": show, "author": show, "cover": cover,
                                      "feed": "", "url": ""}, "entry": e, "owner": owner,
-         "get": CFG["auto_get"] if get is None else bool(get)}
+         "get": CFG["auto_get"] if get is None else bool(get), "replaces": replaces}
     with LOCK:
         FINDS[fid] = f
     save_finds()
@@ -857,6 +869,101 @@ def stop_find(fid):
         log("song finder stopped:", f["title"])
     save_finds()
     return bool(f)
+
+
+def find_again(f):
+    """Listen to a mix once more (it's in your library): the earlier songs stay until the new run is done."""
+    if not core.users.can("download") and not core.users.is_admin():
+        raise PermissionError("The song finder needs download permission")
+    path = f.get("file") or f.get("local")
+    if not path or not os.path.exists(path):
+        raise ValueError("This mix isn't in your library any more; download it again first")
+    return start_local_find(path, f["title"], f.get("show") or "", int(f.get("duration") or 0), f.get("cover") or "",
+                            (f.get("entry") or {}).get("page") or "", f.get("get"), again=True)
+
+
+def few(f):
+    """Found suspiciously little: fewer than one song per 10 minutes of mix (or none)."""
+    n = len(f.get("tracks") or [])
+    return n == 0 or n < (f.get("duration") or 0) / 600
+
+
+def again_few():
+    """Find the songs again in every mix of yours that found few (most were listened to before the finder got better)."""
+    with LOCK:
+        todo = [f for f in FINDS.values() if core.users.mine(f) and f.get("state") == "done" and few(f)
+                and (f.get("file") or f.get("local")) and os.path.exists(f.get("file") or f.get("local"))]
+    files, started = set(), 0
+    for f in sorted(todo, key=lambda f: -f.get("created", 0)):
+        p = f.get("file") or f.get("local")
+        if p in files:
+            continue
+        files.add(p)
+        find_again(f)
+        started += 1
+    return {"started": started}
+
+
+def library_mix(url, title):
+    """Your library's copy of this mix (found by the song finder's record, else by its title) -> {nd_id, file, find}."""
+    key = mix_key(url)
+    want = core.mixfeed.norm(title) if title else ""
+    with LOCK:
+        finds = [f for f in FINDS.values() if core.users.mine(f) and key and mix_key((f.get("entry") or {}).get("page")) == key]
+        if not finds and want:                       # a podcast episode: its page isn't the feed's address
+            finds = [f for f in FINDS.values() if core.users.mine(f) and core.mixfeed.norm(f.get("title")) == want]
+    busy = next((f for f in finds if f["state"] in ("queued", "downloading", "listening")), None)
+    done = max((f for f in finds if f["state"] == "done"), key=lambda f: f.get("created", 0), default=None)
+    f = busy or done or (max(finds, key=lambda f: f.get("created", 0)) if finds else None)
+    path = next((x.get("file") for x in [busy, done] if x and x.get("file") and os.path.exists(x["file"])), "")
+    srv, u = core.server, core.users.current()
+    row = None
+    if path:
+        row = srv.db.q(f"SELECT id, path FROM song WHERE path=? AND {srv.lib_sql(u)}", (path,), one=True)
+    elif want:
+        for r in srv.db.q(f"SELECT id, path, title FROM song WHERE duration >= ? AND {srv.lib_sql(u)}", (core.CONFIG["mix_seconds"],)) or []:
+            if core.mixfeed.norm(r["title"]) == want and core.within(r["path"], core.CONFIG["mixes"]):
+                row = r
+                break
+    if row and not f:
+        f = find_for_file(row["path"])
+    return {"nd_id": row["id"] if row else "", "file": bool(row), "find": view_find(f) if f else None,
+            "can_delete": bool(row) and core.users.can("delete")}
+
+
+def mix_key(u):
+    """A mix's address as one key: a YouTube video's id, or the address without its query."""
+    u = u or ""
+    m = re.search(r"(?:[?&]v=|youtu\.be/)([\w-]{11})", u)
+    return m.group(1) if m else re.sub(r"[?#].*", "", u).rstrip("/").lower()
+
+
+def delete_library_mix(b):
+    """Delete a mix from your library (and its video, and its song finder runs). Only files in the mixes folder."""
+    if not core.users.can("delete"):
+        raise PermissionError("Deleting needs delete permission")
+    srv = core.server
+    r = srv.db.q(f"SELECT id, path FROM song WHERE id=? AND {srv.lib_sql(core.users.current())}", (str(b.get("nd_id") or ""),), one=True)
+    if not r:
+        raise LookupError("That mix isn't in your library")
+    path = r["path"]
+    if not core.within(path, core.CONFIG["mixes"]):
+        raise PermissionError("Only mixes can be deleted here")
+    with LOCK:
+        ids = [f["id"] for f in FINDS.values() if f.get("file") == path and core.users.mine(f)]
+    for fid in ids:
+        stop_find(fid)
+    gone = 0
+    for q in (path, core.video.sidecar(path)):
+        if os.path.isfile(q):
+            try:
+                os.remove(q)
+                gone += 1
+            except OSError as ex:
+                log("couldn't delete", q, ex)
+    log(f"mix deleted: {os.path.basename(path)}")
+    core.nd_scan()
+    return {"ok": True, "deleted": gone}
 
 
 def delete_find(fid):
@@ -1162,6 +1269,16 @@ def run_find(f):
         if f.get("cancel"):
             raise Stopped()
         tracks = merge_tracks(listed, heard)
+        replaced = [o for o in (FINDS.get(x) for x in f.get("replaces") or []) if o]
+        if replaced:                                 # finding again: keep what the earlier run found that this one didn't hear
+            seen = {core.song_key(clean_artist(t["artist"]), t["title"]) for t in tracks}
+            for o in replaced:
+                for t in o.get("tracks") or []:
+                    k = core.song_key(clean_artist(t.get("artist", "")), t.get("title", ""))
+                    if k not in seen:
+                        seen.add(k)
+                        tracks.append({**t, "from": t.get("from") or "earlier"})
+            tracks.sort(key=lambda t: (t.get("t") is None, t.get("t") or 0))
         fset(f, message="Checking your library")
         for t in tracks:
             t["owned"] = owned(t["artist"], t["title"])
@@ -1169,8 +1286,15 @@ def run_find(f):
             path = ""                                # never delete the library's copy
         how = ("audio recognition" if heard else "") + (" and " if heard and listed else "") + ("the published tracklist" if listed else "")
         msg = (f"Found {core.plural(len(tracks), 'song')}" + (f" using {how}" if how else "") if tracks else
-               ("No songs recognised" if rec else "No tracklist published, and audio recognition isn't installed"))
+               ("No songs recognised" if recognition_available() else "No tracklist published, and audio recognition isn't installed"))
         fset(f, state="done", progress=100, tracks=tracks, message=rec_error or msg)
+        if replaced:
+            with LOCK:
+                for o in replaced:
+                    FINDS.pop(o["id"], None)
+                if f.get("get_job") is None and any(o.get("get_job") for o in replaced):
+                    f["get_job"] = next(o["get_job"] for o in replaced if o.get("get_job"))
+            save_finds()
         if f.get("auto") and f.get("file"):                  # a subscription's new mix, in and listened to
             core.notify_people.send(core.notify_people.owner_id(f.get("owner")), f"{f['title']}\nfrom {f['show']}"
                                     + (f" · {core.plural(len(tracks), 'song')} found" if tracks else ""), "new_mix", "New mix",
@@ -1283,6 +1407,8 @@ def view_find(f, full=False):
 
 
 def handle_get(path, qs):
+    if path == "/api/mixlib":
+        return library_mix((qs.get("u") or [""])[0], (qs.get("t") or [""])[0])
     if path == "/api/mixes":
         with LOCK:
             subs = sorted((s for s in SUBS.values() if core.users.mine(s)), key=lambda s: s["title"].lower())
@@ -1333,14 +1459,22 @@ def handle_post(path, b):
                 SUBS.pop(s["id"], None)
             save_subs()
         return {"ok": True}
-    m = re.match(r"^/api/finds/([0-9a-f]+)/(get|remove|delete)$", path)
+    if path == "/api/finds/again-few":
+        return again_few()
+    if path == "/api/mixlib/delete":
+        return delete_library_mix(b)
+    m = re.match(r"^/api/finds/([0-9a-f]+)/(get|remove|delete|again)$", path)
     if m:
         if not core.users.mine(FINDS.get(m.group(1))):
             raise LookupError("unknown mix")
         if m.group(2) == "get":
             return {"job": get_found(m.group(1), b.get("tracks") or [], b.get("name", ""))}
         if m.group(2) == "delete":
+            if not core.users.can("delete"):
+                raise PermissionError("Deleting needs delete permission")
             return delete_find(m.group(1))
+        if m.group(2) == "again":
+            return {"find": find_again(FINDS[m.group(1)])}
         stop_find(m.group(1))
         return {"ok": True}
     return None

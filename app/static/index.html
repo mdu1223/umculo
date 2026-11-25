@@ -51,6 +51,7 @@ nav.tabs .badge{position:absolute;top:0;left:calc(50% + 6px);margin:0}
 .badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-size:11px;line-height:18px;text-align:center;margin-left:4px}
 form.search{display:flex;gap:8px;max-width:760px;margin:12px auto 0}
 form.search input{flex:1;min-width:0;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:16px}
+[hidden]{display:none!important}               /* hidden means hidden, whatever a class says */
 .btn{border:0;border-radius:12px;padding:10px 16px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
 .btn.ghost{background:var(--chip);color:var(--ink)}
 .btn.small{padding:7px 12px;border-radius:10px;font-size:13px}
@@ -216,6 +217,7 @@ header{padding-top:calc(14px + env(safe-area-inset-top))}
 .np-acts button.have{color:var(--lossless);opacity:.9;cursor:default}
 .np-up{text-align:left;margin-top:6px}
 .np-uph{display:flex;align-items:center;justify-content:space-between}
+.np-uph-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .mx-new{color:var(--accent);font-weight:700}
 .vid-src{text-align:center;font-size:12px;margin:-4px 0 6px}
 body.vfull .np-art.vid{position:fixed!important;inset:0!important;z-index:9000;margin:0!important;border-radius:0!important;width:100vw!important;height:100dvh!important;max-width:none!important;background:#000;aspect-ratio:auto!important}
@@ -492,7 +494,7 @@ nav.tabs button{font-size:11px}
 .mxs-hero{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;background:#000;margin:4px 0 12px}.mxs-hero img{width:100%;height:100%;object-fit:cover}
 .mxs-t{font-size:19px;font-weight:800;line-height:1.25;letter-spacing:-.01em;margin-bottom:4px}
 .mxs-why{color:var(--accent);font-weight:650}
-.mxs-acts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.mxs-acts .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.mxs-acts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.mxs-acts:has(#mxs-dl[hidden]){grid-template-columns:1fr}.mxs-acts .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .mxs-opts{margin-top:12px;padding:6px 14px 14px;border-radius:16px;background:color-mix(in srgb,var(--ink) 6%,transparent);animation:pop .22s ease}
 @keyframes pop{from{opacity:0;transform:translateY(6px) scale(.98)}}
 .mxs-sw{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
@@ -674,7 +676,8 @@ nav.tabs button{font-size:11px}
   .mx-hero{aspect-ratio:21/8;max-height:460px}
   .mx-hero::after{background:linear-gradient(90deg,rgba(0,0,0,.88) 0,rgba(0,0,0,.6) 38%,rgba(0,0,0,0) 72%),linear-gradient(0deg,rgba(0,0,0,.5),transparent 40%)}
   .mx-hero-in{top:0;right:auto;width:min(560px,60%);display:flex;flex-direction:column;justify-content:center;padding:36px}
-  .mx-hero-t{font-size:32px;-webkit-line-clamp:3}
+  .mx-hero-t{font-size:clamp(22px,2.4vw,32px);-webkit-line-clamp:2;flex:none}
+  .mx-hero-in>*{flex:none}
   .greet{font-size:30px;margin:14px 2px 16px}
   .quick{grid-template-columns:repeat(4,1fr);gap:12px}.qk{height:64px}.qk-art{width:64px;height:64px}
   .dj-in{padding:32px}.dj-av{width:180px;height:180px}.dj-t{font-size:56px}
@@ -805,7 +808,7 @@ nav.tabs button{font-size:11px}
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm = x => (x || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
-const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : /(x|s|ch|sh)$/.test(w) ? "es" : "s"}`;
 const mmss = s => s ? `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}` : "";
 const mb = b => b ? (b >= 1e9 ? (b/1e9).toFixed(1)+" GB" : (b/1e6).toFixed(b >= 1e8 ? 0 : 1)+" MB") : "";
 const SRC = {soulseek:"Soulseek", usenet:"Usenet", hearthis:"Hearthis.at", soundcloud:"SoundCloud", youtube:"YouTube", link:"Link"};
@@ -1835,18 +1838,19 @@ const mixItem = (m, find) => ({mix_url: m.url, title: m.title, artist: m.channel
   duration: m.duration, _find: find || "", _mix: m.id});
 function mixPlayNow(id) {
   const m = MIXES[id]; if (!m) return;
+  if (m._nd && $("#mxs-status")?.dataset.nd) return mixPlayLib(id);          // it's yours: play your copy
   playList([mixItem(m)], 0, {id: "mix:" + m.id, name: m.channel || "Mixes"}); closeSheet(); openPlayer();
   toast("Playing straight from " + m.source + (m.have ? "" : ": tap Download to keep it"));
 }
 function mixSheet(id, openOpts) {
   const m = MIXES[id]; if (!m) return; mixWarm(id);
   const playingIt = pq[pi]?.mix_url === m.url;
-  openSheet(`<div class="grab"></div><div class="mxs"><div id="mxs-status" data-url="${esc(m.url)}"></div>
+  openSheet(`<div class="grab"></div><div class="mxs"><div id="mxs-status" data-url="${esc(m.url)}" data-id="${esc(id)}"></div>
     <div class="mxs-hero">${m.thumb ? `<img src="${esc(m.thumb)}" alt="">` : ""}<span class="mxc-dur">${hms(m.duration)}</span></div>
     <div class="mxs-t">${esc(m.title)}</div>
     <div class="muted">${esc(m.channel || "")} · ${hms(m.duration)}${m.views ? ` · ${compact(m.views)} plays` : ""}${m.date ? ` · out ${released(m.date)}` : ""} · ${esc(m.source)}${m.why ? `<br><span class="mxs-why">${esc(m.why)}</span>` : ""}</div>
     <div class="mxs-acts"><button class="btn ghost" onclick="${playingIt ? "closeSheet(); openPlayer()" : `mixPlayNow('${id}')`}">${PP_PLAY.replace(/24/g, "18")} ${playingIt ? "Playing" : "Play now"}</button>
-      <button class="btn" onclick="mixOpts('${id}')">${icon("dl", 18)} Download</button></div>
+      <button class="btn" id="mxs-dl" onclick="mixOpts('${id}')">${icon("dl", 18)} Download</button></div>
     <div id="mxs-opts" class="mxs-opts" hidden></div>
     <div class="menu" style="margin-top:10px">
       <button onclick="mixLater('${id}')">${icon(laterHas(id) ? "check" : "queue", 18)} ${laterHas(id) ? "Saved for later (remove)" : "Save for later"}</button>
@@ -1857,31 +1861,69 @@ function mixSheet(id, openOpts) {
   if (openOpts) mixOpts(id);
   mixStatus();
 }
-/* the mix window shows where this mix's download and song finder have got to, with Stop and Delete */
+/* the mix window shows where this mix's download and song finder have got to, or that it's in your library:
+   play it from there, see its songs, find them again, or delete it */
 const mixKey = u => (u || "").match(/(?:[?&]v=|youtu\.be\/)([\w-]{11})/)?.[1] || (u || "").replace(/[?#].*/, "").replace(/\/$/, "").toLowerCase();
 let mixStatusTimer = null;
+const FIND_BUSY = ["queued", "downloading", "listening"];
 async function mixStatus() {
   clearTimeout(mixStatusTimer);
   const box = $("#mxs-status"); if (!box) return;
-  let r; try { r = await api("/api/mixes"); } catch (e) { return; }
+  const id = box.dataset.id, m = MIXES[id];
+  let r; try { r = await api(`/api/mixlib?u=${encodeURIComponent(box.dataset.url)}&t=${encodeURIComponent(m?.title || "")}`); } catch (e) { return; }
   if (!box.isConnected) return;
-  const f = r.finds.find(x => x.page && mixKey(x.page) === mixKey(box.dataset.url)); if (!f) { box.innerHTML = ""; return; }
-  const busy = ["queued", "downloading", "listening"].includes(f.state);
-  const head = f.state === "queued" ? "Waiting to start" : f.state === "downloading" ? "Downloading the mix" : f.state === "listening" ? "Finding the songs"
-    : f.state === "done" ? (f.file ? "In your library" : "Done") : f.state === "error" ? "Didn't finish" : "";
+  const f = r.find, busy = f && FIND_BUSY.includes(f.state);
+  if (m) m.have = !!r.nd_id || m.have && busy;
+  const dl = $("#mxs-dl"); if (dl) dl.hidden = !!(busy || r.nd_id);
+  const opts = $("#mxs-opts"); if (opts && (busy || r.nd_id)) opts.hidden = true;
+  if (!busy && !r.nd_id) {                     // not yours: nothing to show, unless the last try failed
+    box.innerHTML = f && f.state === "failed" ? `<div class="box mxs-st"><b>Couldn't download it last time</b>
+      <div class="muted" style="margin-top:4px">${esc(f.message || "")}</div><div class="muted" style="margin-top:4px">Tap Download to try again.</div></div>` : "";
+    return;
+  }
+  const head = busy ? (f.state === "queued" ? "Waiting to start" : f.state === "downloading" ? "Downloading the mix" : "Finding the songs") : "In your library";
+  const found = f && f.count ? `<span class="muted">${plural(f.count, "song")} found</span>` : "";
+  const msg = busy ? (f.message && f.message !== head ? f.message : "") : f ? (f.state === "done" ? (f.count ? "" : "The song finder didn't recognise any songs last time.") : f.state === "failed" ? "The song finder didn't finish: " + (f.message || "") : "")
+    : "The song finder hasn't listened to it yet.";
+  box.dataset.nd = r.nd_id || "";
+  if (m) m._nd = !busy && r.nd_id || "";
   box.innerHTML = `<div class="box mxs-st"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
-      <b>${busy ? `<span class="spin"></span>` : ""}${esc(head)}</b>${f.count ? `<span class="muted">${plural(f.count, "song")} found</span>` : ""}</div>
-    ${f.message ? `<div class="muted" style="margin-top:4px">${esc(f.message)}</div>` : ""}
+      <b>${busy ? `<span class="spin"></span>` : icon("check", 16) + " "}${esc(head)}</b>${found}</div>
+    ${msg ? `<div class="muted" style="margin-top:4px">${esc(msg)}</div>` : ""}
     ${busy ? `<div class="bar" style="margin-top:8px"><i style="width:${Math.max(3, f.progress || 0)}%"></i></div>` : ""}
-    <div class="chips" style="margin-top:10px"><button class="btn small ghost" onclick="openFind('${f.id}')">See the songs</button>
+    <div class="chips" style="margin-top:10px">
+      ${r.nd_id && !busy ? `<button class="btn small" onclick="mixPlayLib('${id}')">${PP_PLAY.replace(/24/g, "16")} Play from your library</button>` : ""}
+      ${f && (busy || f.count) ? `<button class="btn small ghost" onclick="openFind('${f.id}')">See the songs</button>` : ""}
       ${busy ? `<button class="btn small ghost" onclick="findRemove('${f.id}', true)">Stop</button>` : ""}
-      <button class="btn small ghost" style="color:var(--low)" onclick="findDelete('${f.id}')">Delete</button></div></div>`;
+      ${r.nd_id && !busy ? `<button class="btn small ghost" onclick="mixFindAgain('${id}', this)">${f ? "Find the songs again" : "Find the songs"}</button>` : ""}
+      ${r.can_delete && (r.nd_id || busy) ? `<button class="btn small ghost" style="color:var(--low)" onclick="mixDelete('${id}', ${busy ? `'${f.id}'` : "null"})">Delete</button>` : ""}</div></div>`;
   if (busy) mixStatusTimer = setTimeout(mixStatus, 3000);
 }
-async function findDelete(id) {
+function mixPlayLib(id) {
+  const box = $("#mxs-status"), m = MIXES[id], nd = box?.dataset.nd; if (!nd || !m) return;
+  playList([{nd_id: nd, title: m.title, artist: m.channel || "", album: m.channel || "", cover: m.thumb, cover_big: m.thumb, duration: m.duration}], 0,
+    {id: "mix:" + id, name: m.channel || "Mixes"});
+  closeSheet(); openPlayer();
+}
+async function mixFindAgain(id, btn) {
+  const nd = $("#mxs-status")?.dataset.nd; if (!nd) return;
+  await busy(btn, async () => { await api(`/api/chapters/${nd}/find`, {method: "POST", body: JSON.stringify({again: true})});
+    toast("Listening to the mix again; what it found before stays until it's done"); mixStatus(); loadMixes(); });
+}
+async function mixDelete(id, findId) {
+  const m = MIXES[id], nd = $("#mxs-status")?.dataset.nd;
+  if (!confirm(`Delete “${m?.title || "this mix"}” (and its video) from your library? This can't be undone. Songs it already got stay.`)) return;
+  try {
+    if (findId) await api(`/api/finds/${findId}/delete`, {method: "POST"});
+    if (nd) await api("/api/mixlib/delete", {method: "POST", body: JSON.stringify({nd_id: nd})}).catch(e => { if (!findId) throw e; });
+    if (m) m.have = false;
+    closeSheet(); toast("Mix deleted"); loadMixes(); loadMixFeed();
+  } catch (e) { toast(e.message); }
+}
+async function findDelete(id) {                // the song finder list's Delete (the mix it downloaded, and its video)
   if (!confirm("Stop, and delete this mix (and its video) from your library? This can't be undone. Songs it already got stay.")) return;
   try { const r = await api(`/api/finds/${id}/delete`, {method: "POST"}); closeSheet();
-        toast(r.deleted ? "Mix deleted" : "Stopped; nothing had been downloaded yet"); loadMixes(); } catch (e) { toast(e.message); }
+        toast(r.deleted ? "Mix deleted" : "Stopped; nothing had been downloaded yet"); loadMixes(); loadMixFeed(); } catch (e) { toast(e.message); }
 }
 function mixOpts(id) {
   const m = MIXES[id], el = $("#mxs-opts"); if (!m || !el) return;
@@ -1934,13 +1976,15 @@ function mixActBtn(it) {
 async function loadMixes() {
   clearTimeout(mixTimer);
   let r; try { r = await api("/api/mixes"); } catch (e) { $("#mx-subs").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-  $("#mx-finds").innerHTML = r.finds.length ? `<h2>Song finder</h2>` + r.finds.map(f => `<div class="box rowline">
+  const fewN = r.finds.filter(f => f.state === "done" && f.file && (!f.count || f.count < (f.duration || 0) / 600)).length;
+  $("#mx-finds").innerHTML = r.finds.length ? `<div class="mx-head"><h2>Song finder</h2>${fewN ? `<button class="btn small ghost" onclick="findAgainFew(this)" title="Mixes that found fewer than a song every 10 minutes: most were listened to before the song finder got better">Find again in ${plural(fewN, "mix")} that found few</button>` : ""}</div>` + r.finds.map(f => `<div class="box rowline">
       ${f.cover ? `<img class="cover" src="${esc(f.cover)}" alt="" onerror="this.style.visibility='hidden'">` : ""}
       <div class="meta"><div class="t">${esc(f.title)}</div><div class="muted">${esc(f.show || "")}</div>
       <div class="muted">${f.state === "done" ? `<b>${plural(f.count, "song")} found</b>` : esc(f.message)}</div>
       ${["queued","downloading","listening"].includes(f.state) ? `<div class="bar"><i style="width:${Math.max(3, f.progress||0)}%"></i></div>` : ""}</div>
       <div class="chips" style="flex-direction:column;flex-wrap:nowrap"><button class="btn small ghost" onclick="openFind('${f.id}')">Open</button>
-      ${["queued","downloading","listening"].includes(f.state) ? `<button class="btn small ghost" onclick="findRemove('${f.id}', true)">Stop</button>` : ""}</div></div>`).join("") : "";
+      ${["queued","downloading","listening"].includes(f.state) ? `<button class="btn small ghost" onclick="findRemove('${f.id}', true)">Stop</button>`
+        : f.file ? `<button class="btn small ghost" onclick="findAgain('${f.id}', this)">Find again</button>` : ""}</div></div>`).join("") : "";
   if (!r.recognition) $("#mx-finds").innerHTML += `<div class="muted" style="margin:6px 4px">Audio recognition isn't installed, so the song finder can only read published tracklists.</div>`;
   $("#mx-subs").innerHTML = `<h2>Subscriptions <span class="count">${r.subscriptions.length}</span></h2>` + r.pending.map(t => `<div class="box rowline"><div class="cover"></div>
       <div class="meta"><div class="t">${esc(t)}</div><div class="muted"><span class="spin"></span>Subscribing… reading the channel</div></div></div>`).join("") + (r.subscriptions.length ? r.subscriptions.map(s => `<div class="box rowline">
@@ -1983,6 +2027,13 @@ async function openFind(id) {
     <div class="chips" style="margin-top:12px"><button class="btn small ghost" onclick="findRemove('${f.id}', ${busy})">${busy ? "Stop and remove" : "Remove from list"}</button></div>`;
   if ($("#sheet").classList.contains("open")) setPanel(html); else openSheet(html);
   if (busy) findTimer = setTimeout(() => { if ($("#sheet").classList.contains("open")) openFind(id); }, 4000);
+}
+async function findAgain(id, btn) {
+  await busy(btn, async () => { await api(`/api/finds/${id}/again`, {method: "POST"}); toast("Listening to the mix again; what it found before stays until it's done"); loadMixes(); });
+}
+async function findAgainFew(btn) {
+  await busy(btn, async () => { const r = await api("/api/finds/again-few", {method: "POST"});
+    toast(r.started ? `Listening again to ${plural(r.started, "mix")}, a few at a time` : "Nothing to listen to again"); loadMixes(); });
 }
 async function findGet(id) {
   const tracks = [...document.querySelectorAll('.chk input:checked')].map(x => +x.dataset.i);
@@ -3042,7 +3093,8 @@ function tintFrom(it) {                       // a soft background from the cove
 const vidIsFull = () => document.fullscreenElement === vidEl || document.webkitFullscreenElement === vidEl || !!vidEl.webkitDisplayingFullscreen;
 function renderPlayer() {
   if (vidIsFull()) { renderPlayer.later = true; return; }      // redraw once they come back out
-  const it = pq[pi], p = $("#player"); if (!it || !(desk() ? dockShown() : $("#sheet").classList.contains("open"))) return;
+  // on a phone the player shares the panel with every other window: only draw it there while the panel is the player's
+  const it = pq[pi], p = $("#player"); if (!it || !(desk() ? dockShown() : $("#sheet").classList.contains("open") && $("#panel").classList.contains("np-panel"))) return;
   const pc = p.duration ? p.currentTime * 100 / p.duration : 0, up = pq.slice(pi + 1), lyr = npView === "lyrics";
   const qcls = it.q ? (it.q.tier === "lossless" ? "lossless" : qTier(it.q.quality)) : "";
   const src = it.q ? `<span class="q ${qcls}">${esc(it.q.quality)}</span> ${esc(it.q.from)}` : (it.nd_id ? "From your library" : p.readyState < 3 && !p.paused ? "Getting it from the internet… a few seconds" : "Streaming from the internet");
@@ -3193,9 +3245,9 @@ async function loadChap(it) {
     const nw = r.tracks.filter(t => !was.tracks.some(o => o.title === t.title && o.artist === t.artist));
     if (nw.length === 1) toast(`Heard: ${nw[0].artist} – ${nw[0].title}`); else if (nw.length) toast(`${plural(nw.length, "more song")} found in this mix`);
   }
-  if (["queued", "downloading", "listening"].includes(r.state) || r.getting) setTimeout(() => { if (pq[pi] === it) loadChap(it); }, r.state === "listening" ? 2500 : 5000);
+  if (["queued", "downloading", "listening"].includes(r.state) || r.getting || r.again) setTimeout(() => { if (pq[pi] === it) loadChap(it); }, r.state === "listening" ? 2500 : 5000);
   // only redraw the panel when the songs change; the status line and bar update where they are
-  const sig = c => c && JSON.stringify([c.state, (c.tracks || []).map(t => [t.t, t.artist, t.title, t.owned, t.getting]), c.file]);
+  const sig = c => c && JSON.stringify([c.state, (c.tracks || []).map(t => [t.t, t.artist, t.title, t.owned, t.getting]), c.file, !!c.again, c.again?.progress]);
   if (was && sig(was) === sig(r) && $("#chap-msg")) {
     $("#chap-msg").textContent = r.message || "Listening"; const b = $("#chap-bar"); if (b) b.style.width = Math.max(3, r.progress || 0) + "%";
     return;
@@ -3225,7 +3277,11 @@ function chapHTML(it) {
     <button class="btn small ghost" style="margin-top:8px" onclick="findChapters()">Try again</button></div>`;
   const k = chapAt(c, $("#player").currentTime);
   const missing = c.tracks.filter(x => !x.owned && x.artist).length;
-  return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2>${missing && c.find && !c.get ? `<button class="btn small ghost" onclick="getMixSongs('${c.find}', this)" title="Make a playlist of this mix's songs and get the ones you don't have from your sources">Get the ${missing} missing</button>` : ""}</div>` + c.tracks.map((x, i) => chapRow(x, i, k)).join("");
+  return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2><span class="np-uph-acts">${missing && c.find && !c.get ? `<button class="btn small ghost" onclick="getMixSongs('${c.find}', this)" title="Make a playlist of this mix's songs and get the ones you don't have from your sources">Get the ${missing} missing</button>` : ""}
+      ${it.nd_id && !c.again ? `<button class="btn small ghost" onclick="findChapters(true)" title="Listen to the mix once more: the song finder got better, and finds more">Find again</button>` : ""}</span></div>`
+    + (c.again ? `<div class="chap-msg muted"><span class="spin"></span><span>Listening again: ${esc(c.again.message || "")}</span></div>
+      <div class="bar" style="margin:0 0 8px"><i style="width:${Math.max(3, c.again.progress || 0)}%"></i></div>` : "")
+    + c.tracks.map((x, i) => chapRow(x, i, k)).join("");
 }
 const GETTING = {pending: "queued", searching: "searching…", downloading: "downloading…", filing: "downloading…", scanning: "downloading…",
   not_found: "not found on your sources", failed: "couldn't get it", cancelled: "stopped"};
@@ -3249,9 +3305,11 @@ function chapTick() {
   document.querySelectorAll(".chap").forEach(el => el.classList.toggle("on", +el.dataset.ci === k));
 }
 function chapSeek(t) { const p = $("#player"); p.currentTime = t; if (p.paused) p.play().catch(() => {}); chapIdx = -2; chapTick(); }
-async function findChapters() {
+async function findChapters(again) {
   const it = pq[pi]; if (!it?.nd_id) return;
-  try { await api(`/api/chapters/${it.nd_id}/find`, {method: "POST"}); toast("Listening to the mix; songs appear here as they're found"); delete chapCache[it.nd_id]; renderPlayer(); }
+  try { await api(`/api/chapters/${it.nd_id}/find`, {method: "POST", body: JSON.stringify({again: !!again})});
+        toast(again ? "Listening to the mix again; these songs stay until it's done" : "Listening to the mix; songs appear here as they're found");
+        delete chapCache[it.nd_id]; renderPlayer(); }
   catch (e) { toast(e.message); }
 }
 /* ---------- songs from your mixes: find them on your sources, or buy them ---------- */

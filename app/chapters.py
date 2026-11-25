@@ -28,7 +28,13 @@ def view(r):
     if not f:
         return {"state": "none", "tracks": [], "message": "", "progress": 0,
                 "can_find": core.links.recognition_available()}
-    return find_view(f)
+    out = find_view(f)
+    with core.links.LOCK:                          # listening to it again: the earlier songs show until that's done
+        again = next((x for x in core.links.FINDS.values() if x.get("file") == r["path"] and x is not f and core.users.mine(x)
+                      and x["state"] in ("queued", "downloading", "listening")), None)
+    if again and f["state"] == "done":
+        out["again"] = {"find": again["id"], "progress": again.get("progress", 0), "message": again.get("message", "")}
+    return out
 
 
 def find_view(f):
@@ -118,7 +124,8 @@ def handle_post(path, b):
         page = core.video.page_for(r) if core.video.is_mix(r) else ""   # where it came from: its tracklist is often there
     except Exception:  # noqa: BLE001
         pass
-    fid = core.links.start_local_find(r["path"], r["title"], show, int(r["duration"] or 0), page=page, get=(b or {}).get("get"))
+    fid = core.links.start_local_find(r["path"], r["title"], show, int(r["duration"] or 0), page=page, get=(b or {}).get("get"),
+                                      again=bool((b or {}).get("again")))
     return {"ok": True, "find": fid}
 
 
