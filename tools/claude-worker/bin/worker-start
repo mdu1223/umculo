@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# The container's main process: keeps Remote Control running in a tmux window called "rc",
+# so you can work with Claude from the Claude app or claude.ai/code at any time.
+set -u
+mkdir -p "$HOME/.claude" /work/reports
+cp -f /opt/worker/worker-CLAUDE.md "$HOME/.claude/CLAUDE.md"
+REPO=${UMCULO_REPO:-https://github.com/mdu1223/umculo.git}
+[ -d /work/umculo/.git ] || git clone -q "$REPO" /work/umculo || true
+
+cat > /tmp/rc-loop <<'EOF'
+#!/usr/bin/env bash
+cd /work/umculo || cd /work
+while true; do
+  if [ ! -s "$HOME/.claude/.credentials.json" ]; then
+    echo "Claude isn't signed in yet. From the server, run:  docker exec -it claude-worker worker-setup"
+    sleep 60; continue
+  fi
+  claude remote-control --spawn worktree --permission-mode bypassPermissions \
+    --remote-control-session-name-prefix "${RC_NAME_PREFIX:-umculo-server}"
+  echo "Remote Control stopped (exit $?); starting again in 15 s. (Signed out? Run worker-setup again.)"
+  sleep 15
+done
+EOF
+chmod +x /tmp/rc-loop
+tmux has-session -t rc 2>/dev/null || tmux new-session -d -s rc -x 200 -y 50 /tmp/rc-loop
+echo "worker ready: Remote Control runs in tmux window 'rc' (docker exec -it claude-worker tmux attach -t rc)"
+# stay up; if tmux dies, start it again
+while true; do
+  sleep 30
+  tmux has-session -t rc 2>/dev/null || tmux new-session -d -s rc -x 200 -y 50 /tmp/rc-loop
+done

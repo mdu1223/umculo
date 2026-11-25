@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# The nightly review (started by the server's umculo-review.timer). Works in its own copy of the code,
+# so it never gets in the way of a session you have open. Fixes go to a pull request, never straight to main.
+set -uo pipefail
+exec 9>/tmp/umculo-review.lock
+flock -n 9 || { echo "A review is already running."; exit 0; }
+mkdir -p /work/reports
+if [ ! -s "$HOME/.claude/.credentials.json" ]; then echo "Claude isn't signed in (run worker-setup)." >&2; exit 1; fi
+if [ -d /work/nightly/.git ]; then
+  git -C /work/nightly fetch -q origin && git -C /work/nightly checkout -q main && git -C /work/nightly reset -q --hard origin/main \
+    && git -C /work/nightly clean -qfdx
+else
+  git clone -q "$(git -C /work/umculo remote get-url origin 2>/dev/null || echo https://github.com/mdu1223/umculo.git)" /work/nightly
+fi
+cd /work/nightly
+day=$(date +%F)
+last=$(cat /work/reports/last-reviewed 2>/dev/null || true)
+prompt="$(cat /opt/worker/review-prompt.md)
+
+Today is ${day}. The last reviewed commit was: ${last:-none (review the last 20 commits)}. The current main is $(git rev-parse --short HEAD)."
+claude -p "$prompt" --dangerously-skip-permissions --output-format json > "/work/reports/review-${day}.json" 2> "/work/reports/review-${day}.log"
+code=$?
+jq -r '.result // empty' "/work/reports/review-${day}.json" > "/work/reports/review-${day}.md" 2>/dev/null || true
+[ $code = 0 ] && git rev-parse --short HEAD > /work/reports/last-reviewed
+echo "Review finished (exit $code): /work/reports/review-${day}.md"
+exit $code

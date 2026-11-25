@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Runs on the server (as root) when the worker drops a deploy request. It runs only the update script,
+# with nothing from the request except its id, and at most once every 2 minutes.
+set -u
+DIR=${WORKER_DIR:-/opt/claude-worker}/deploy
+UPDATE=${UMCULO_UPDATE_SCRIPT:-/root/umculo-update.sh}
+[ -f "$DIR/request" ] || exit 0
+id=$(head -c 64 "$DIR/request" | tr -cd 'A-Za-z0-9-')
+rm -f "$DIR/request"
+answer() { printf '%s\n%s\n' "$id" "$1" > "$DIR/result.tmp"; chown 1000:1000 "$DIR/result.tmp"; mv -f "$DIR/result.tmp" "$DIR/result"; }
+last=$(stat -c %Y "$DIR/last.log" 2>/dev/null || echo 0)
+if [ $(( $(date +%s) - last )) -lt 120 ]; then
+  echo "$(date '+%F %T') deploy $id refused: the last one was under 2 minutes ago" >> "$DIR/last.log"
+  answer 75; exit 0
+fi
+{ echo "$(date '+%F %T') deploy $id: running $UPDATE"; timeout 20m bash "$UPDATE"; echo "exit $?"; } > "$DIR/last.log" 2>&1
+code=$(tail -1 "$DIR/last.log" | sed 's/[^0-9]//g')
+chown 1000:1000 "$DIR/last.log"
+answer "${code:-1}"

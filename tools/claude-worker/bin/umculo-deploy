@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Ask the server to deploy Umculo (runs the server's own update script, which pulls main from GitHub).
+# The container can't run anything on the server itself: it drops a request in /deploy and waits for the answer.
+set -euo pipefail
+cd /work/umculo
+git fetch -q origin main
+if [ -n "$(git status --porcelain --untracked-files=no)" ] || [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+  echo "Not deploying: what's here isn't exactly origin/main. The server deploys what's on GitHub main," >&2
+  echo "so commit, push to main and let the tests pass first (gh run list --branch main)." >&2
+  exit 2
+fi
+state=$(gh run list --branch main --commit "$(git rev-parse HEAD)" --json name,status,conclusion \
+          -q '[.[] | select(.name=="Tests")][0] | "\(.status) \(.conclusion)"' 2>/dev/null || true)
+if [ "${FORCE:-}" != 1 ] && [ "$state" != "completed success" ]; then
+  echo "Not deploying: GitHub's Tests run for this commit is '${state:-not found}'. Wait for it to pass (or FORCE=1)." >&2
+  exit 3
+fi
+id="$(date +%s)-$(git rev-parse --short HEAD)"
+printf '%s\n' "$id" > /deploy/request.tmp && mv /deploy/request.tmp /deploy/request
+echo "Deploy $id requested; waiting for the server…"
+for _ in $(seq 240); do                       # up to 20 minutes
+  if [ -f /deploy/result ] && [ "$(head -1 /deploy/result)" = "$id" ]; then
+    code=$(sed -n 2p /deploy/result)
+    echo "--- last lines of the update log ---"; tail -25 /deploy/last.log 2>/dev/null || true
+    [ "$code" = 0 ] && echo "Deployed $id." || echo "The update script ended with code $code."
+    exit "$code"
+  fi
+  sleep 5
+done
+echo "No answer from the server after 20 minutes (is the umculo-deploy.path unit running on the host?)" >&2
+exit 4

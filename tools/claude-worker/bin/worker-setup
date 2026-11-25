@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# One-time setup, run by you:  docker exec -it claude-worker worker-setup
+# You type every sign-in yourself; nothing here prints or stores a secret anywhere else.
+set -e
+say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+
+say "1/4  Git identity for commits"
+git config --global user.name  >/dev/null || git config --global user.name  "${GIT_NAME:-Mdu}"
+git config --global user.email >/dev/null || git config --global user.email "${GIT_EMAIL:-mdu1223@users.noreply.github.com}"
+git config --global pull.ff only
+echo "Commits will be by: $(git config --global user.name) <$(git config --global user.email)>"
+
+say "2/4  GitHub (to push fixes, open pull requests and check the test runs)"
+if gh auth status >/dev/null 2>&1; then
+  echo "Already signed in to GitHub."
+else
+  echo "Make a fine-grained token at https://github.com/settings/personal-access-tokens/new"
+  echo "  Repository access: only mdu1223/umculo"
+  echo "  Permissions: Contents, Pull requests, Issues = Read and write; Actions = Read"
+  read -r -s -p "Paste the token and press Enter (it isn't shown): " tok; echo
+  printf '%s' "$tok" | gh auth login --hostname github.com --git-protocol https --with-token
+  unset tok
+fi
+gh auth setup-git
+[ -d /work/umculo/.git ] || gh repo clone mdu1223/umculo /work/umculo
+
+say "3/4  Sign in to Claude"
+if [ -s "$HOME/.claude/.credentials.json" ]; then
+  echo "Already signed in. (To switch accounts: run claude, then /logout and /login.)"
+else
+  echo "Claude starts now. Choose your Claude subscription, open the link it shows on your phone or PC,"
+  echo "sign in, and paste the code back here. Accept the questions it asks, then type /exit."
+  read -r -p "Press Enter to start…" _
+  (cd /work/umculo && claude)
+fi
+
+say "4/4  Turn on Remote Control"
+echo "The first time, Remote Control asks: 'Enable Remote Control?', whether to trust /work/umculo, and to accept"
+echo "running without permission prompts (that's safe here: this container is cut off from the rest of the server)."
+echo "Answer yes to each. Leave the window with Ctrl-b then d (it keeps running)."
+read -r -p "Press Enter to open it…" _
+tmux attach -t rc
+say "Done. Open the Claude app → Code, or claude.ai/code: the session is named umculo-server-…"

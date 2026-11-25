@@ -28,12 +28,15 @@ def measure(path):
     """-> (integrated loudness LUFS, true peak dBTP) or None."""
     try:
         p = subprocess.run(["nice", "-n", "15", "ffmpeg", "-nostdin", "-nostats", "-hide_banner", "-i", path, "-vn",
-                            "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
+                            "-af", "ebur128=peak=true:framelog=verbose", "-f", "null", "-"],
                            capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired) as ex:
         core.log("even volume: couldn't measure", os.path.basename(path), ex)
         return None
     out = p.stderr or ""
+    if p.returncode != 0:                            # a failed run still prints a summary, all zeros: not a measurement
+        core.log("even volume: couldn't measure", os.path.basename(path), (out.strip().splitlines() or ["?"])[-1][:200])
+        return None
     i = re.findall(r"I:\s*(-?\d+(?:\.\d+)?)\s*LUFS", out)
     pk = re.findall(r"Peak:\s*(-?\d+(?:\.\d+)?|-inf)\s*dBFS", out)
     if not i:
@@ -158,5 +161,6 @@ def handle_get(path, qs):
 def init(umculo):
     global core
     core = umculo
-    DATA.update(core._load_json("loudness.json", {}) or {})
+    DATA.update({k: v for k, v in (core._load_json("loudness.json", {}) or {}).items()
+                 if not (v.get("lufs") == 0.0 and v.get("peak") == 0.0)})    # a failed run once read as 0 LUFS
     threading.Thread(target=loop, daemon=True).start()

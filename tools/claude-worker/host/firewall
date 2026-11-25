@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Keep the Claude worker off the home network: it may reach the internet, nothing private.
+# Run by claude-worker-firewall.service at boot (after Docker); safe to run again.
+set -eu
+SUBNET=${WORKER_SUBNET:-172.30.250.0/24}
+PRIVATE="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16"
+add() { iptables -C "$@" 2>/dev/null || iptables -I "$@"; }
+# to other machines and containers (routed traffic)
+iptables -L DOCKER-USER -n >/dev/null 2>&1 || iptables -N DOCKER-USER
+for net in $PRIVATE; do add DOCKER-USER -s "$SUBNET" -d "$net" -j DROP; done
+# to the server itself (its LAN and Tailscale addresses and every published port)
+add INPUT -s "$SUBNET" -j DROP
+echo "claude-worker firewall: $SUBNET may reach only the internet"

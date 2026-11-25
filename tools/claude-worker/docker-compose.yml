@@ -1,0 +1,35 @@
+# Claude worker for Umculo. Installed and started by install.sh; see README.md here.
+name: claude-worker
+services:
+  claude-worker:
+    build: .
+    image: claude-worker:local
+    container_name: claude-worker
+    hostname: umculo-worker
+    restart: unless-stopped
+    init: true
+    tty: true
+    stdin_open: true
+    user: "1000:1000"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${WORKER_MEMORY:-6g}
+    cpus: ${WORKER_CPUS:-3}
+    pids_limit: 2048
+    environment:
+      TZ: ${TZ:-Africa/Johannesburg}
+      RC_NAME_PREFIX: umculo-server
+    dns: [1.1.1.1, 8.8.8.8]          # public DNS: the home network (and its router) is off limits
+    volumes:
+      - claude-home:/home/claude      # Claude's sign-in, settings and updates
+      - ./work:/work                  # the code and the review reports
+      - ./deploy:/deploy              # the deploy request box (the only thing the server reads from here)
+    networks: [worker]
+volumes:
+  claude-home:
+networks:
+  worker:
+    name: claude-worker
+    ipam:
+      config:
+        - subnet: ${WORKER_SUBNET:-172.30.250.0/24}
