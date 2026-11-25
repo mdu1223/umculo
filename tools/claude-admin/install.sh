@@ -13,13 +13,21 @@ need() { command -v "$1" >/dev/null 2>&1; }
 missing=""; for t in tmux git curl sudo; do need "$t" || missing="$missing $t"; done
 if [ -n "$missing" ]; then
   echo "Installing:$missing"
-  if need dnf; then dnf install -y -q $missing; elif need apt-get; then apt-get update -qq && apt-get install -y -qq $missing
-  elif need yum; then yum install -y -q $missing; else echo "Install these first:$missing"; exit 1; fi
+  if need dnf; then dnf install -y -q $missing
+  elif need apt-get; then apt-get update -qq && apt-get install -y -qq $missing
+  elif need pacman; then pacman -S --noconfirm --needed $missing
+  elif need zypper; then zypper -n install $missing
+  elif need apk; then apk add $missing
+  elif need yum; then yum install -y -q $missing
+  else echo "Install these with your system's package manager first:$missing"; exit 1; fi
+  for t in $missing; do need "$t" || { echo "Couldn't install $t; install it and run this again."; exit 1; }; done
 fi
 
 # the user: its own account, allowed sudo without a password and Docker
 id "$U" >/dev/null 2>&1 || useradd -m -s /bin/bash -c "Claude server admin" "$U"
 getent group docker >/dev/null && usermod -aG docker "$U"
+install -d -m 750 /etc/sudoers.d
+grep -Eq '^[@#]includedir /etc/sudoers.d' /etc/sudoers || echo '#includedir /etc/sudoers.d' >> /etc/sudoers && visudo -c >/dev/null
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$U" > "/etc/sudoers.d/$U.tmp"
 chmod 440 "/etc/sudoers.d/$U.tmp"
 visudo -cf "/etc/sudoers.d/$U.tmp" >/dev/null && mv "/etc/sudoers.d/$U.tmp" "/etc/sudoers.d/$U"
