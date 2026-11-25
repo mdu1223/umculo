@@ -12,6 +12,7 @@ Smart mixes (made from your library, fresh every time you open them):
 GET  /api/smart                 -> {"mixes": [{"id", "name", "sub", "cover", "songs"}]}
 GET  /api/smart/<id>            -> {"name", "songs": [...]}
 """
+import hashlib
 import random
 import re
 import time
@@ -27,8 +28,26 @@ def fy():
     return core.foryou
 
 
-def ident(nd_id, deezer_id):
-    return f"n{nd_id}" if nd_id else f"d{deezer_id}" if deezer_id else ""
+def ident(nd_id, deezer_id, key=""):
+    """n<library id>, d<catalogue id>, or k<…> for a song known only by name (an unreleased edit heard in a mix)."""
+    return f"n{nd_id}" if nd_id else f"d{deezer_id}" if deezer_id else ("k" + hashlib.sha1(key.encode()).hexdigest()[:12] if key else "")
+
+
+def resolve(artist, title):
+    """A song known only by name (a song heard in a mix): -> (library id, catalogue entry or None)."""
+    f = core.playlists.lib_file({"artist": artist, "title": title}, me())
+    if f:
+        r = core.server.db.q("SELECT id FROM song WHERE path=?", (f,), one=True)
+        if r:
+            return r["id"], None
+    tgt = core.make_target(artist, title)
+    try:
+        for d in core.deezer_search(f"{artist} {title}", 10):
+            if core.match(f"{d['artist']} {d['title']}", tgt)[1]:
+                return "", d
+    except Exception:  # noqa: BLE001
+        pass
+    return "", None
 
 
 def set_like(b):
@@ -36,13 +55,17 @@ def set_like(b):
     value = int(b.get("value") or 0)
     artist, title = b.get("artist") or "", b.get("title") or ""
     srv, u = core.server, me()
+    cat = None
+    if not nd and not dz and artist and title:
+        nd, cat = resolve(artist, title)
+        dz = str(cat["deezer_id"]) if cat else ""
     if nd:
         r = srv.db.q(f"SELECT * FROM song WHERE id=? AND {srv.lib_sql(u)}", (nd,), one=True)
         if not r:
             raise LookupError("Song not found")
         artist, title = r["artist"], r["title"]
         srv.touch_ann(u, nd, "song", starred=time.time() if value > 0 else 0)
-    if not (artist and title) or not (nd or dz):
+    if not (artist and title):
         raise ValueError("Which song?")
     k = core.song_key(artist, title)
     rec = {"artist": artist, "title": title, "at": time.time(), "nd_id": nd, "deezer_id": dz}
@@ -57,7 +80,32 @@ def set_like(b):
             for sh in s["shelves"]:
                 sh["items"] = [i for i in sh["items"] if i.get("key") != k]
     fy().save()
-    return {"ok": True, "id": ident(nd, dz), "value": value}
+    getting = False
+    if value > 0 and not nd and core.users.can("download", u):     # liked, not in your library: get it (it's starred on arrival)
+        m = {"artist": artist, "title": title, "deezer_id": dz, **{k: (cat or {}).get(k) for k in ("version", "duration", "album", "cover", "cover_big")}}
+        core.subsonic.as_person(u, core.subsonic.auto_get, m, "you liked it")
+        getting = True
+    return {"ok": True, "id": ident(nd, dz, k), "value": value, "getting": getting}
+
+
+def star_arrivals(u):
+    """Liked before you had it: once it's in your library, it's starred (and so in Liked songs and your apps)."""
+    srv = core.server
+    with fy().LOCK:
+        todo = [(k, x) for k, x in fy().S()["likes"].items() if not x.get("nd_id")][:30]
+    changed = False
+    for k, x in todo:
+        hit = core.index_get(x["artist"], x["title"])
+        r = srv.db.q("SELECT id FROM song WHERE path=?", (hit["path"],), one=True) if hit else None
+        if r:
+            srv.touch_ann(u, r["id"], "song", starred=x.get("at") or time.time())
+            with fy().LOCK:
+                cur = fy().S()["likes"].get(k)
+                if cur is not None:
+                    cur["nd_id"] = r["id"]
+            changed = True
+    if changed:
+        fy().save()
 
 
 def starred_ids(u):
@@ -67,16 +115,20 @@ def starred_ids(u):
 
 
 def state():
+    try:
+        star_arrivals(me())
+    except Exception as ex:  # noqa: BLE001
+        core.log("likes: starring arrivals:", ex)
     liked = {"n" + i for i in starred_ids(me())} if core.builtin() else set()
     disliked = set()
     with fy().LOCK:
         s = fy().S()
-        for x in s["likes"].values():
-            i = ident(x.get("nd_id"), x.get("deezer_id"))
+        for k, x in s["likes"].items():
+            i = ident(x.get("nd_id"), x.get("deezer_id"), k)
             if i and not i.startswith("n"):          # library likes are the stars above (unstar in an app = unlike)
                 liked.add(i)
-        for x in s["dislikes"].values():
-            i = ident(x.get("nd_id"), x.get("deezer_id"))
+        for k, x in s["dislikes"].items():
+            i = ident(x.get("nd_id"), x.get("deezer_id"), k)
             if i:
                 disliked.add(i)
     return {"liked": sorted(liked), "disliked": sorted(disliked)}
@@ -119,6 +171,10 @@ def spread(rows, n=60):
 
 def build(u, only=None):
     """-> [(id, name, sub, rows)] of every smart mix that has enough songs."""
+    try:
+        star_arrivals(u)
+    except Exception as ex:  # noqa: BLE001
+        core.log("likes: starring arrivals:", ex)
     rows = rows_for(u)
     a = anns(u)
     now = time.time()

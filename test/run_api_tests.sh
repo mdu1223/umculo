@@ -27,4 +27,5 @@ INBOX_EVERY=2 SLSK_WATCH_EVERY=1 SLSK_OFF_AFTER=2 SLSK_CANARY_EVERY=1 SLSK_SUSPE
 TEST_SHAZAM=1 TEST_MIXES=$PWD/test/mixes_fixture.json run mixfeed 8110 python3 test/v31_mixfeed.py 8110
 run versions  8111 python3 test/v32_versions.py 8111
 run loudness 8112 python3 test/v33_loudness.py 8112
+run playlists 8113 python3 test/v34_playlists.py 8113
 exit $FAIL

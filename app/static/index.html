@@ -1006,6 +1006,7 @@ function songMenu(kind, i) {
       <button onclick="closeSheet(); playList(LISTS.menu, 0)">▶ Play</button>
       <button onclick="closeSheet(); queueSong(LISTS.menu[0], true)">⤴ Play next</button>
       <button onclick="closeSheet(); queueSong(LISTS.menu[0], false)">＋ Add to queue</button>
+      ${songActs({...s, nd_id: kind === "lib" ? (s.nd_id || s.id) : "", owned: s.owned})}
       ${kind === "lib" ? `<button onclick="closeSheet(); cookMix('local', LISTS.menu[0])">🍳 Cook locally <span class="muted">· a mix from your music</span></button>` : ""}
       <button onclick="closeSheet(); notForMe(LISTS.menu[0])">🚫 Not for me <span class="muted">· never cook or suggest it</span></button>
       <button onclick="closeSheet(); cookMix('new', LISTS.menu[0])">🔥 Just cook <span class="muted">· songs you don't know yet</span></button>
@@ -1014,6 +1015,47 @@ function songMenu(kind, i) {
       ${kind === "lib" ? `<button onclick="findText(${esc(JSON.stringify(s.artist + " - " + s.title))})">Look for a better copy</button>` : `<button onclick="startCheck('cat',${i})">${s.owned ? "Upgrade the copy you have" : "Download the best copy"}</button>`}
       ${kind === "lib" && sLib.can_delete ? `<button class="danger" onclick="libDelete('song','${s.id}',${esc(JSON.stringify(s.title))},'search')">Delete from the server</button>` : ""}
     </div>`);
+}
+/* ---------- like any song, and add it to one of your playlists (a song you don't have is fetched) ---------- */
+const LIKEKEY = {};                                       // "artist|title" -> the id the server gave a like by name
+const songK = x => ((x.artist || "") + "|" + (x.title || "")).toLowerCase();
+const likeId = x => x.nd_id ? "n" + x.nd_id : x.deezer_id ? "d" + x.deezer_id : LIKEKEY[songK(x)] || "";
+function songActs(x) {                                    // menu buttons for one song: ♥ and Add to playlist
+  LISTS.act = [x]; const on = LIKES.liked.has(likeId(x));
+  return `<button onclick="closeSheet(); likeIt(LISTS.act[0])">${HEART(on).replace('width="20" height="20"', 'width="18" height="18"')} ${on ? "Liked (tap to unlike)" : "Like"}${!on && !x.nd_id && !x.owned ? ` <span class="muted">· and get it</span>` : ""}</button>
+    <button onclick="plPicker(LISTS.act)">${icon("plus", 18)} Add to playlist…</button>`;
+}
+async function likeIt(x) {
+  const was = likeId(x), on = !(was && LIKES.liked.has(was));
+  try {
+    const r = await api("/api/like", {method: "POST", body: JSON.stringify({nd_id: x.nd_id || "", deezer_id: x.deezer_id || "", artist: x.artist, title: x.title, value: on ? 1 : 0})});
+    if (r.id) { LIKEKEY[songK(x)] = r.id; LIKES.disliked.delete(r.id); on ? LIKES.liked.add(r.id) : LIKES.liked.delete(r.id); }
+    paintLikes(); homeLib = null;
+    toast(on ? (r.getting ? "Liked · getting it; it joins Liked songs when it arrives" : "Liked · in your Liked songs") : "Removed from your liked songs");
+  } catch (e) { toast(e.message); }
+}
+async function plPicker(items) {
+  items = (items || []).filter(Boolean); if (!items.length) return;
+  LISTS.pick = items;
+  const one = items.length === 1 ? items[0] : null;
+  ($("#sheet").classList.contains("open") || dockShown() ? setPanel : openSheet)(`<div class="grab"></div><div class="np-sub"><span></span><div class="t">Add to playlist</div><button class="icon" onclick="closeSheet()" aria-label="Close">✕</button></div>
+    <div class="muted" style="margin:0 4px 10px">${one ? `${esc(one.artist)} – ${esc(one.title)}` : plural(items.length, "song")}</div>
+    <form class="pl-new" onsubmit="event.preventDefault(); plAdd(null, this.n.value, this.querySelector('button'))" style="display:flex;gap:8px;margin-bottom:12px">
+      <input class="field" name="n" placeholder="New playlist name" maxlength="120" autocomplete="off" style="flex:1"><button class="btn">Create</button></form>
+    <div id="pl-pick"><div class="empty"><span class="spin"></span></div></div>`);
+  let r; try { r = await api("/api/pl/mine"); } catch (e) { $("#pl-pick").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const el = $("#pl-pick"); if (!el) return;
+  el.innerHTML = r.playlists.length ? `<div class="menu">${r.playlists.map(p => `<button style="display:flex;align-items:center;gap:10px" onclick="plAdd('${p.id}', ${esc(JSON.stringify(p.name))}, this)">${icon("queue", 18)}<span style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</span><span class="muted" style="flex:none">${plural(p.tracks || 0, "song")}</span></button>`).join("")}</div>`
+    : `<div class="muted" style="margin:4px">You don't have any playlists of your own yet: name one above.</div>`;
+}
+async function plAdd(id, name, btn) {
+  if (!id && !(name || "").trim()) return toast("Give the new playlist a name");
+  await busy(btn, async () => {
+    const r = await api("/api/pl/add", {method: "POST", body: JSON.stringify({pl: id || "", name: id ? "" : name.trim(), songs: LISTS.pick.map(x => ({nd_id: x.nd_id || "", deezer_id: x.deezer_id || "", artist: x.artist, title: x.title, duration: x.duration || 0}))})});
+    closeSheet();
+    const bits = [r.added ? `${plural(r.added, "song")} added` : "", r.getting ? `getting ${r.getting} you don't have` : "", r.already ? `${r.already} already there` : "", r.skipped ? `${r.skipped} not in your library` : ""].filter(Boolean);
+    toast(`${id ? "" : "Made "}${r.name}: ${bits.join(", ") || "nothing new"}`);
+  });
 }
 function queueSong(it, next) {
   if (party && !party.dj) return partyAdd(it, next);
@@ -2804,6 +2846,7 @@ const IC = {
   people: `<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/>`,
   video: `<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10.5 5-3v9l-5-3z"/>`,
   full: `<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>`,
+  plus: `<path d="M12 5v14M5 12h14"/>`,
   down: `<path d="m6 9 6 6 6-6"/>`, dl: `<path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/>`, check: `<path d="m5 12.5 4.5 4.5L19 7"/>`, x: `<path d="M6 6l12 12M18 6 6 18"/>`, up: `<path d="m6 15 6-6 6 6"/>`,
 };
 const icon = (k, size = 22) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
@@ -2924,6 +2967,7 @@ function moreSheet() {
   const sp = store.get("umc_speed", 1);
   setPanel(`<div class="grab"></div><div class="np-sub"><button class="icon" onclick="renderPlayer()" aria-label="Back">${icon("down")}</button><div class="t">${esc(it.title)}</div><span></span></div>
     <div class="menu">
+      ${it.mix_url || isLong(it) ? "" : songActs(it)}
       <button onclick="closeSheet(); openArtistByName(${esc(JSON.stringify((it.artist || "").split(/,| & | x | feat/i)[0].trim()))})">Go to artist</button>
       ${it.nd_id && it.album_id ? `<button onclick="openLibAlbum('${it.album_id}')">Go to album</button>` : ""}
       ${it.nd_id || it.owned ? "" : `<button onclick="keepIt()">Download the best copy</button>`}
@@ -3188,7 +3232,7 @@ const GETTING = {pending: "queued", searching: "searching…", downloading: "dow
 function chapRow(x, i, k) {
   return `<div class="qrow chap${i === k ? " on" : ""}" data-ci="${i}" ${x.t != null ? `onclick="chapSeek(${x.t})"` : ""}>
       <span class="time">${x.t != null ? hms(x.t) : "–"}</span><div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}${x.owned || x.getting === "done" ? ` · <span class="own">in your library</span>` : x.getting ? ` · <span class="getting ${x.getting}">${GETTING[x.getting] || "getting it"}</span>` : ""}</div></div>
-      <button class="icon sm" onclick="event.stopPropagation(); findMenu(${esc(JSON.stringify(x.artist))}, ${esc(JSON.stringify(x.title))})" aria-label="Find this song" title="Find this song">${icon("more", 18)}</button></div>`;
+      <button class="icon sm" onclick="event.stopPropagation(); findMenu(${esc(JSON.stringify(x.artist))}, ${esc(JSON.stringify(x.title))}, ${!!(x.owned || x.getting === "done")})" aria-label="More for this song" title="Like, add to a playlist, find">${icon("more", 18)}</button></div>`;
 }
 function renderMarks() {                     // a tick on the seek bar for every song in the mix (hover for its name, click to jump)
   const it = pq[pi], c = it && chapCache[chapKey(it)], d = $("#player").duration;
@@ -3218,10 +3262,10 @@ function buyRow(q) {
   const e = encodeURIComponent(q.trim());
   return `<div class="buy"><span class="muted">Buy it (then drop it in your inbox folder):</span>${STORES.map(([n, u]) => `<a href="${u(e)}" target="_blank" rel="noopener">${n}</a>`).join("")}</div>`;
 }
-function findMenu(artist, title) {
+function findMenu(artist, title, owned) {
   const q = `${artist} - ${title}`;
   openSheet(`<div class="grab"></div><div class="rowline"><div class="meta"><b>${esc(title)}</b><div class="muted">${esc(artist)}</div></div></div>
-    <div class="menu"><button onclick="searchFor(${esc(JSON.stringify(q))})">Search for it (your library, the internet, every source)</button></div>${buyRow(q)}`);   // buy links only when switched on
+    <div class="menu">${songActs({artist, title, owned})}<button onclick="searchFor(${esc(JSON.stringify(q))})">Search for it (your library, the internet, every source)</button></div>${buyRow(q)}`);   // buy links only when switched on
 }
 async function getMixSongs(find, btn) {
   await busy(btn, async () => { const r = await api("/api/chapters/wanted/get", {method: "POST", body: JSON.stringify({find, name: (pq[pi]?.title || "Mix songs").slice(0, 80)})});

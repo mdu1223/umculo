@@ -14,6 +14,7 @@ import os
 import re
 import threading
 import time
+import uuid
 
 core = None
 META = {}                      # path -> {"watch": bool, "why": "finished"|"you", "at": t}
@@ -487,8 +488,127 @@ def mix_save():
     core._save_json("mixtapes.json", {"name": MIX["name"], "on": MIX["on"]})
 
 
+# --------------------------------------------------------------------------- your own playlists: add songs
+def editable(c, u=None):
+    """Playlists you can add to: Umculo's own (not a synced Spotify one), yours (the admin: any of Umculo's)."""
+    u = u or core.users.current()
+    return c["folder"] == "umculo" and (core.users.is_admin(u) or c["owner"] == (u or {}).get("id"))
+
+
+def mine():
+    cards = [c for c in all_cards() if editable(c)]
+    cards.sort(key=lambda c: -(c.get("mtime") or 0))
+    return {"playlists": [{"id": c["id"], "name": c["name"], "tracks": c["tracks"]} for c in cards]}
+
+
+def lib_file(s, u):
+    """The library file for this song, or ""."""
+    srv = core.server
+    if s.get("nd_id"):
+        r = srv.db.q(f"SELECT path FROM song WHERE id=? AND {srv.lib_sql(u)}", (str(s["nd_id"]),), one=True)
+        return r["path"] if r else ""
+    a, t = s.get("artist") or "", s.get("title") or ""
+    hit = core.index_get(a, t)
+    if hit:
+        return hit["path"]
+    tgt = core.make_target(a, t)
+    for x in core.nd_search(f"{a} {t}")[:10]:
+        if core.match(f"{x.get('artist', '')} {x.get('title', '')}", tgt)[1]:
+            r = srv.db.q(f"SELECT path FROM song WHERE id=? AND {srv.lib_sql(u)}", (x["id"],), one=True)
+            if r:
+                return r["path"]
+    return ""
+
+
+def kept_track(i, artist, title, path, duration=0):
+    tier, label = core.file_quality(path)
+    return {"i": i, "artist": artist, "title": title, "duration": duration, "state": "kept", "message": "In your library",
+            "file": path, "new_file": "", "quality": label, "tier": tier, "new_quality": "", "source": ""}
+
+
+def adopt(path, name):
+    """A playlist made by hand (or before Umculo kept a list for it): Umculo takes it over as it is, so songs can be
+    added and fetched. Nothing in it is looked for again."""
+    tracks = []
+    for e in (core.m3u_entries(path) if os.path.isfile(path) else []):
+        r = core.server.db.q("SELECT artist, title, duration FROM song WHERE path=?", (e,), one=True)
+        tracks.append(kept_track(len(tracks), r["artist"] if r else "", r["title"] if r else os.path.splitext(os.path.basename(e))[0],
+                                 e, (r["duration"] if r else 0) or 0))
+    job = {"id": uuid.uuid4().hex[:12], "name": name, "kind": "import", "m3u": path, "tracks": tracks,
+           "created": time.time(), "updated": time.time(), "cancel": False, "user": owner_of(path) or core.users.current_id()}
+    with core.JOB_LOCK:
+        core.JOBS[job["id"]] = job
+    core.save_jobs()
+    return job
+
+
+def add_songs(b):
+    """Add songs to one of your playlists (or a new one). Songs in your library go in now; the others are fetched
+    from your sources (if you may download) and go in when they arrive."""
+    u = core.users.current()
+    songs = [x for x in (b.get("songs") or []) if isinstance(x, dict) and (x.get("title") or x.get("nd_id"))][:300]
+    if not songs:
+        raise ValueError("Which songs?")
+    if b.get("pl"):
+        c = by_id(b["pl"])
+        if not editable(c, u):
+            raise PermissionError("You can't add songs to this playlist")
+        path, name = c["path"], c["name"]
+    else:
+        name = core.safe(b.get("name") or "")
+        if not (b.get("name") or "").strip():
+            raise ValueError("Give the new playlist a name")
+        path = os.path.join(core.users.playlist_dir(core.users.current_id()), name + ".m3u8")
+        if os.path.exists(path) or any(c["name"].lower() == name.lower() for c in all_cards() if editable(c, u)):
+            raise ValueError(f"You already have a playlist called {name}")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    job = job_for(path)
+    if job and job["kind"] != "import":
+        raise ValueError("This playlist is kept in step with another app; add songs there")
+    if not job:
+        job = adopt(path, name)
+    with core.JOB_LOCK:
+        have = {t.get("new_file") or t.get("file") for t in job["tracks"]} - {""} \
+            | {core.song_key(t["artist"], t["title"]) for t in job["tracks"] if t.get("artist")}
+    added, already, skipped, fetch = 0, 0, 0, []
+    for x in songs:
+        a, t = x.get("artist") or "", x.get("title") or ""
+        k = core.song_key(a, t)
+        f = lib_file(x, u)
+        if not f and not t:                          # an id that isn't in your library
+            skipped += 1
+            continue
+        if (f and f in have) or (a and k in have):
+            already += 1
+            continue
+        if f:
+            r = core.server.db.q("SELECT artist, title, duration FROM song WHERE path=?", (f,), one=True)
+            with core.JOB_LOCK:
+                job["tracks"].append(kept_track(len(job["tracks"]), r["artist"] if r else a, r["title"] if r else t, f,
+                                                (r["duration"] if r else 0) or 0))
+            added += 1
+            have |= {f, k}
+        elif core.users.can("download", u):
+            fetch.append({"artist": a, "title": t, "duration": x.get("duration") or 0,
+                          **({"deezer_id": x["deezer_id"]} if x.get("deezer_id") else {})})
+            have.add(k)
+        else:
+            skipped += 1
+    job["updated"] = time.time()
+    core.write_job_playlist(job)
+    core.save_jobs()
+    if fetch:
+        set_watch(path, True)
+        core.add_tracks(job, fetch)
+    CACHE["at"] = 0
+    core.nd_scan()                                   # music apps see it too
+    return {"id": pid(path), "name": name, "added": added, "getting": len(fetch), "already": already, "skipped": skipped}
+
+
 # --------------------------------------------------------------------------- web
 def handle_get(path, qs):
+    if path == "/api/pl/mine":
+        return mine()
     if path == "/api/pl":
         return {"playlists": all_cards(bool(qs.get("fresh")))}
     m = re.match(r"^/api/pl/([0-9a-f]{12})$", path)
@@ -501,6 +621,8 @@ def handle_get(path, qs):
 
 
 def handle_post(path, b):
+    if path == "/api/pl/add":
+        return add_songs(b)
     if path == "/api/pl/upgrade-all":
         return {"ids": upgrade_all()}
     m = re.match(r"^/api/pl/([0-9a-f]{12})/(rename|delete|watch|unwatch|remove|upgrade)$", path)
