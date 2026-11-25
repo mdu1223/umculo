@@ -49,6 +49,12 @@ g["core"] = _Core
 fp = g["first_pass"](3600, 60)
 check(len(fp) == 20 and fp[0] == 30 and fp[1] - fp[0] == 180, f"the first pass covers an hour in 20 bits {fp[:3]} {len(fp)}")
 exec(re.search(r"(def same.*?\n\n\n)", src, re.S).group(1), g)
+import urllib.parse as _up
+g["urllib"] = __import__("urllib"); exec(re.search(r"(def one_video.*?\n\n\n)", src, re.S).group(1), g)
+check(g["one_video"]("https://www.youtube.com/watch?v=IdfVkx7qKYg&list=RDIdfVkx7qKYg&start_radio=1") == "https://www.youtube.com/watch?v=IdfVkx7qKYg",
+      "a video link with YouTube's Mix list is that one video")
+check(g["one_video"]("https://youtu.be/l9YZmIUW8Ds?si=x") == "https://www.youtube.com/watch?v=l9YZmIUW8Ds", "a short link too")
+check(g["one_video"]("https://www.youtube.com/playlist?list=PL123") == "https://www.youtube.com/playlist?list=PL123", "a playlist link stays a playlist")
 res = {30: ("A", "One"), 210: ("A", "One"), 390: ("B", "Two"), 570: None, 750: ("C", "Three")}
 r1 = g["refine"](res, 60, 800, 1)
 check(r1 == [270, 330, 450, 510, 630, 690], f"round 1: a bit a minute, not inside one song {r1}")

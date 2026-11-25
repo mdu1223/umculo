@@ -238,10 +238,26 @@ def thumb(info):
     return (th[-1] or {}).get("url", "") if th else ""
 
 
+def one_video(url):
+    """A YouTube link to one video means that video, even when YouTube added a list to it (&list=RD... is its
+    endless "Mix" radio, &list=PL... the playlist you were in). A whole playlist is pasted as its own
+    playlist link (youtube.com/playlist?list=...)."""
+    u = urllib.parse.urlparse(url)
+    host = u.netloc.lower()
+    if host.endswith("youtube.com") and u.path == "/watch":
+        v = urllib.parse.parse_qs(u.query).get("v", [""])[0]
+        if re.fullmatch(r"[\w-]{11}", v):
+            return f"https://www.youtube.com/watch?v={v}"
+    if host.endswith("youtu.be") and re.fullmatch(r"/[\w-]{11}", u.path):
+        return f"https://www.youtube.com/watch?v={u.path[1:]}"
+    return url
+
+
 def resolve(url):
     url = (url or "").strip()
     if not re.match(r"^https?://", url):
         raise ValueError("Paste a full link starting with https://")
+    url = one_video(url)
     host = urllib.parse.urlparse(url).netloc.lower()
     if host.endswith("podcasts.apple.com") or host.endswith("itunes.apple.com"):
         show = resolve_apple(url)
@@ -843,6 +859,26 @@ def stop_find(fid):
     return bool(f)
 
 
+def delete_find(fid):
+    """Stop it, and remove the mix it downloaded (and its video). Only files in the mixes folder."""
+    f = FINDS.get(fid) or {}
+    files = {p for p in (f.get("local"), f.get("file")) if p}
+    stop_find(fid)
+    gone = 0
+    for p in files:
+        for q in (p, core.video.sidecar(p)):
+            if q and os.path.isfile(q) and core.within(q, core.CONFIG["mixes"]):
+                try:
+                    os.remove(q)
+                    gone += 1
+                except OSError as ex:
+                    log("couldn't delete", q, ex)
+    if gone:
+        log(f"mix deleted: {f.get('title')} ({core.plural(gone, 'file')})")
+        core.nd_scan()                                # the library forgets it
+    return {"ok": True, "deleted": gone}
+
+
 GET_LOCK = threading.Lock()
 
 
@@ -1236,6 +1272,7 @@ def view_sub(s):
 def view_find(f, full=False):
     keys = ("id", "title", "show", "cover", "duration", "state", "progress", "message", "created", "file")
     out = {k: f.get(k) for k in keys}
+    out["page"] = (f.get("entry") or {}).get("page") or ""          # which mix this is (the mix window shows its progress)
     out["count"] = len(f.get("tracks") or [])
     if full:
         got = get_states(f) if f.get("get_job") else {}
@@ -1296,12 +1333,14 @@ def handle_post(path, b):
                 SUBS.pop(s["id"], None)
             save_subs()
         return {"ok": True}
-    m = re.match(r"^/api/finds/([0-9a-f]+)/(get|remove)$", path)
+    m = re.match(r"^/api/finds/([0-9a-f]+)/(get|remove|delete)$", path)
     if m:
         if not core.users.mine(FINDS.get(m.group(1))):
             raise LookupError("unknown mix")
         if m.group(2) == "get":
             return {"job": get_found(m.group(1), b.get("tracks") or [], b.get("name", ""))}
+        if m.group(2) == "delete":
+            return delete_find(m.group(1))
         stop_find(m.group(1))
         return {"ok": True}
     return None

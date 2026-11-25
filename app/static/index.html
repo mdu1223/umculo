@@ -1538,12 +1538,10 @@ let linkShow = null, findTimer = null, mixTimer = null;
 const ago = t => { if (!t) return "never"; const s = Date.now()/1000 - t; return s < 3600 ? Math.max(1, Math.round(s/60)) + " min ago" : s < 86400 ? Math.round(s/3600) + " h ago" : plural(Math.round(s/86400), "day") + " ago"; };
 const hms = s => s >= 3600 ? `${Math.floor(s/3600)}:${String(Math.floor(s%3600/60)).padStart(2,"0")}:${String(Math.floor(s%60)).padStart(2,"0")}` : mmss(s);
 
-async function openLink(url) {
+async function openLink(url) {                 // one mix: the mix window; a channel, playlist or podcast: the show window
   url = (url || "").trim();
   if (!url) return toast("Paste a link first");
-  openSheet(`<div class="grab"></div><div class="empty"><span class="spin"></span> Reading the link…</div>`);
-  try { linkShow = await api("/api/link", {method:"POST", body: JSON.stringify({url})}); renderLink(); }
-  catch (e) { setPanel(`<div class="grab"></div><div class="empty">${esc(e.message)}</div>`); }
+  return mixLink(url);
 }
 function epRow(e) {
   const long = e.duration > 1200 || linkShow.podcast;
@@ -1801,7 +1799,7 @@ function mixPlayNow(id) {
 function mixSheet(id, openOpts) {
   const m = MIXES[id]; if (!m) return; mixWarm(id);
   const playingIt = pq[pi]?.mix_url === m.url;
-  openSheet(`<div class="grab"></div><div class="mxs">
+  openSheet(`<div class="grab"></div><div class="mxs"><div id="mxs-status" data-url="${esc(m.url)}"></div>
     <div class="mxs-hero">${m.thumb ? `<img src="${esc(m.thumb)}" alt="">` : ""}<span class="mxc-dur">${hms(m.duration)}</span></div>
     <div class="mxs-t">${esc(m.title)}</div>
     <div class="muted">${esc(m.channel || "")} · ${hms(m.duration)}${m.views ? ` · ${compact(m.views)} plays` : ""}${m.date ? ` · out ${released(m.date)}` : ""} · ${esc(m.source)}${m.why ? `<br><span class="mxs-why">${esc(m.why)}</span>` : ""}</div>
@@ -1815,6 +1813,33 @@ function mixSheet(id, openOpts) {
       ${m.channel ? `<button onclick="mixHide('${id}', true)">${icon("x", 18)} Fewer mixes from ${esc(m.channel)}</button>` : ""}
       <a class="menu-a" href="${esc(m.url)}" target="_blank" rel="noopener">${icon("link", 18)} Open on ${esc(m.source)}</a></div></div>`);
   if (openOpts) mixOpts(id);
+  mixStatus();
+}
+/* the mix window shows where this mix's download and song finder have got to, with Stop and Delete */
+const mixKey = u => (u || "").match(/(?:[?&]v=|youtu\.be\/)([\w-]{11})/)?.[1] || (u || "").replace(/[?#].*/, "").replace(/\/$/, "").toLowerCase();
+let mixStatusTimer = null;
+async function mixStatus() {
+  clearTimeout(mixStatusTimer);
+  const box = $("#mxs-status"); if (!box) return;
+  let r; try { r = await api("/api/mixes"); } catch (e) { return; }
+  if (!box.isConnected) return;
+  const f = r.finds.find(x => x.page && mixKey(x.page) === mixKey(box.dataset.url)); if (!f) { box.innerHTML = ""; return; }
+  const busy = ["queued", "downloading", "listening"].includes(f.state);
+  const head = f.state === "queued" ? "Waiting to start" : f.state === "downloading" ? "Downloading the mix" : f.state === "listening" ? "Finding the songs"
+    : f.state === "done" ? (f.file ? "In your library" : "Done") : f.state === "error" ? "Didn't finish" : "";
+  box.innerHTML = `<div class="box mxs-st"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+      <b>${busy ? `<span class="spin"></span>` : ""}${esc(head)}</b>${f.count ? `<span class="muted">${plural(f.count, "song")} found</span>` : ""}</div>
+    ${f.message ? `<div class="muted" style="margin-top:4px">${esc(f.message)}</div>` : ""}
+    ${busy ? `<div class="bar" style="margin-top:8px"><i style="width:${Math.max(3, f.progress || 0)}%"></i></div>` : ""}
+    <div class="chips" style="margin-top:10px"><button class="btn small ghost" onclick="openFind('${f.id}')">See the songs</button>
+      ${busy ? `<button class="btn small ghost" onclick="findRemove('${f.id}', true)">Stop</button>` : ""}
+      <button class="btn small ghost" style="color:var(--low)" onclick="findDelete('${f.id}')">Delete</button></div></div>`;
+  if (busy) mixStatusTimer = setTimeout(mixStatus, 3000);
+}
+async function findDelete(id) {
+  if (!confirm("Stop, and delete this mix (and its video) from your library? This can't be undone. Songs it already got stay.")) return;
+  try { const r = await api(`/api/finds/${id}/delete`, {method: "POST"}); closeSheet();
+        toast(r.deleted ? "Mix deleted" : "Stopped; nothing had been downloaded yet"); loadMixes(); } catch (e) { toast(e.message); }
 }
 function mixOpts(id) {
   const m = MIXES[id], el = $("#mxs-opts"); if (!m || !el) return;
@@ -2718,7 +2743,10 @@ function bindPlayer(it, startAt) {
   p.onplaying = () => { errRun = 0; vidSync(); partyPush(); $("#mini-s").textContent = it.artist + (it.q ? " · " + it.q.quality : ""); setPP(false); if (npOpen()) renderPlayer();
     if (!it.q) api(it.nd_id ? `/api/streaminfo/nd/${it.nd_id}?can=${CAN}` : `/api/streaminfo/d/${it.deezer_id}`).then(q => {
       if (!q.quality) return; it.q = q; if (pq[pi] === it) { $("#mini-s").textContent = it.artist + " · " + q.quality; if (npOpen() && npView !== "lyrics") renderPlayer(); } }).catch(() => {}); };
-  p.onseeked = () => partyPush();
+  p.onseeked = () => { vidSync(); partyPush(); };
+  // the video follows a skip at once (back or forward), and waits while the sound loads the new spot
+  p.onseeking = () => vidSync(true);
+  p.onwaiting = () => vidSync();
   p.onpause = () => { vidSync(); partyPush(); setPP(true); saveQueue(); if (p.duration >= LONG) { store.set(posKey(it), p.currentTime); contSave(it, p.currentTime, p.duration); } };
   p.onended = () => { if (isLong(it)) { store.set(posKey(it), 0); contSave(it, 0, 0); } advance(true); };
   p.onerror = () => { if (!p.src || p.src === location.href) return; errRun++; toast(errRun >= 3 ? "Several songs wouldn't play; stopped. Check the status page." : "Couldn't play " + it.title);
@@ -3259,7 +3287,7 @@ function npArt(it) {
         <button class="vid-fs2" onclick="vidFull()" aria-label="Full screen" title="Full screen (F)">${icon("full", 18)}</button></div>
       <div class="vq-menu" id="vq-menu" hidden></div></div>` : artHTML(it, "np-art")) + row;
 }
-function vidSync() {
+function vidSync(jump) {
   const it = pq[pi], p = $("#player");
   const pip = document.pictureInPictureElement === vidEl;
   if (!it || ((!vidShowing(it) || !vidEl.isConnected) && !pip)) { if (!vidEl.paused) vidEl.pause(); return; }
@@ -3271,8 +3299,9 @@ function vidSync() {
   const off = it.mix_url ? 0 : +((vidInfo[it.nd_id] || {}).offset || 0), want = p.currentTime + off;
   const outside = want < 0 || (vidEl.duration && want > vidEl.duration);
   if (outside) { if (!vidEl.paused) vidEl.pause(); if (!vidEl.seeking && want < 0 && vidEl.currentTime > 0.1) vidEl.currentTime = 0; return; }
-  if (!vidEl.seeking && Math.abs(vidEl.currentTime - want) > (off ? 0.25 : 0.5)) vidEl.currentTime = want;
-  if (p.paused) { if (!vidEl.paused) vidEl.pause(); } else if (vidEl.paused) vidEl.play().catch(() => {});
+  if ((jump || !vidEl.seeking) && Math.abs(vidEl.currentTime - want) > (off ? 0.25 : 0.5)) vidEl.currentTime = want;
+  const held = p.paused || p.seeking || p.readyState < 3;          // the sound is paused, or loading after a skip
+  if (held) { if (!vidEl.paused) vidEl.pause(); } else if (vidEl.paused) vidEl.play().catch(() => {});
 }
 /* video quality: the picture is fetched on its own (the sound comes from the audio player), so it can be sharp */
 const VQ = [["", "Auto"], ["480", "480p"], ["720", "720p"], ["1080", "1080p HD"], ["1440", "1440p"], ["best", "Best (up to 4K)"]];
