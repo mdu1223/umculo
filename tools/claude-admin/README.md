@@ -14,7 +14,7 @@ delete photos, music or data volumes, never print secrets, and log every change 
 On the server, as root, from a copy of this repository:
 
     sudo bash tools/claude-admin/install.sh
-    sudo -iu claude-admin claude                  # sign in (link + code), answer the questions, /exit
+    sudo -iu claude-admin /home/claude-admin/.local/bin/claude                # sign in (link + code), answer the questions, /exit
     sudo -iu claude-admin tmux attach -t admin    # the first time: answer y, leave with Ctrl-b then d
 
 Then in the Claude app → Code, pick the session named `server-admin-…`.

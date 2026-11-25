@@ -35,6 +35,9 @@ H=$(getent passwd "$U" | cut -d: -f6)
 
 # Claude Code (keeps itself up to date), its instructions and its starting mode
 [ -x "$H/.local/bin/claude" ] || sudo -iu "$U" bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
+for f in .bashrc .bash_profile; do                      # so "claude" works in that user's shell
+  grep -qs 'local/bin' "$H/$f" || { echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$H/$f"; chown "$U:" "$H/$f"; }
+done
 install -d -o "$U" -g "$U" -m 700 "$H/.claude"
 install -o "$U" -g "$U" -m 644 "$SRC/admin-CLAUDE.md" "$H/.claude/CLAUDE.md"
 sudo -iu "$U" python3 - "$MODE" <<'EOF' 2>/dev/null || true
@@ -53,7 +56,7 @@ cat > /usr/local/bin/claude-admin-loop <<EOF
 cd "\$HOME"
 while true; do
   if [ ! -s "\$HOME/.claude/.credentials.json" ]; then
-    echo "Not signed in yet. On the server run:  sudo -iu $U claude   (sign in, then /exit)"; sleep 60; continue
+    echo "Not signed in yet. On the server run:  sudo -iu $U $H/.local/bin/claude   (sign in, then /exit)"; sleep 60; continue
   fi
   "\$HOME/.local/bin/claude" remote-control --permission-mode $MODE --remote-control-session-name-prefix server-admin
   echo "Remote Control stopped (exit \$?); starting again in 15 s."; sleep 15
@@ -85,7 +88,7 @@ cat <<EOF
 
 Installed (mode: $MODE). Now, on the server:
 
-  1. Sign in:            sudo -iu $U claude          (pick your Claude subscription, open the link, paste the code,
+  1. Sign in:            sudo -iu $U $H/.local/bin/claude          (pick your Claude subscription, open the link, paste the code,
                                                       answer the questions, then /exit)
   2. Turn on Remote Control the first time:
                          sudo -iu $U tmux attach -t admin    (answer y; leave with Ctrl-b then d)
