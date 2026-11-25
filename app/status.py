@@ -5,6 +5,7 @@ Checks run in parallel, each with a short timeout, every few minutes in the back
 """
 import collections
 import concurrent.futures as cf
+import datetime
 import os
 import shutil
 import threading
@@ -269,6 +270,16 @@ def c_soulseek():
     return "down", f"slskd is {state or 'not connected to Soulseek'}{since}{tries}"
 
 
+def till_ts(v):
+    """Prowlarr's '2026-11-25T03:10:00Z' -> unix time (0 if missing)."""
+    if not v:
+        return 0
+    try:
+        return datetime.datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0
+
+
 def c_prowlarr():
     if not core.CONFIG["prowlarr_key"]:
         return "warn", "Not set up (PROWLARR_KEY)"
@@ -277,8 +288,14 @@ def c_prowlarr():
     idx = core.http("GET", f"{core.CONFIG['prowlarr']}/api/v1/indexer", headers=h, timeout=10) or []
     status = core.http("GET", f"{core.CONFIG['prowlarr']}/api/v1/indexerstatus", headers=h, timeout=10) or []
     on = [i for i in idx if i.get("enable")]
-    bad = [s for s in status if s.get("disabledTill")]
-    msg = f"{len(on)} indexers on" + (f", {len(bad)} temporarily disabled" if bad else "")
+    names = {i.get("id"): i.get("name") or "an indexer" for i in idx}
+    bad = []
+    for st in status:                               # Prowlarr pauses an indexer that keeps failing, then tries it again
+        till = till_ts(st.get("disabledTill"))
+        if till and till > time.time():
+            bad.append(f"{names.get(st.get('indexerId'), 'an indexer')} paused by Prowlarr until "
+                       + time.strftime("%H:%M", time.localtime(till)) + (" tomorrow" if till - time.time() > 12 * 3600 else ""))
+    msg = f"{len(on)} indexers on" + (" · " + "; ".join(bad) if bad else "")
     issues = [x.get("message", "") for x in health if x.get("type") in ("error", "warning")]
     if not on:
         return "down", "No indexers enabled"

@@ -1642,6 +1642,7 @@ async function loadMixFeed() {
     return;
   }
   MIXLATER = r.later || [];
+  contFix([...r.shelves.flatMap(sh => sh.items), ...MIXLATER]);
   const hero = (r.shelves.find(x => x.id === "shows") || r.shelves[0]).items[0];
   if (hero) { r.shelves.forEach(sh => sh.items = sh.items.filter(x => x.id !== hero.id)); r.shelves = r.shelves.filter(sh => sh.items.length); }
   el.innerHTML = heroHTML(hero) + contHTML() + (MIXLATER.length ? `<div class="mx-row"><div class="mx-rowh"><b>Saved for later</b><span class="muted">Mixes you kept for another time</span></div>
@@ -1696,6 +1697,16 @@ function contSave(it, t, d) {
   if (t > 60 && d && t < d * 0.96) l.unshift({k: qid(it), t, d, at: Date.now(), it: {...it, q: null, _played: 0}});
   store.set("umc_cont", l.slice(0, 12));
 }
+/* entries saved before a mix's channel was known show the site's name ("YouTube"): put the channel in once the feed knows it */
+const SITE_NAMES = /^(youtube|soundcloud|hearthis(\.at)?|mixcloud)$/i;
+function contFix(mixes) {
+  const ch = Object.fromEntries(mixes.filter(m => m?.url && m.channel).map(m => [m.url, m.channel]));
+  let changed = false;
+  const l = store.get("umc_cont", []).map(x => { const a = x.it?.artist || "";
+    if (!SITE_NAMES.test(a)) return x; changed = true;
+    const c = ch[x.it.mix_url] || ""; return {...x, it: {...x.it, artist: c, album: x.it.album && !SITE_NAMES.test(x.it.album) ? x.it.album : c}}; });
+  if (changed) store.set("umc_cont", l);
+}
 function contHTML() {
   const l = store.get("umc_cont", []); if (!l.length) return "";
   return `<div class="mx-row"><div class="mx-rowh"><b>Pick up where you left off</b><span class="muted">Mixes and episodes you didn't finish</span></div>
@@ -1705,7 +1716,7 @@ function contHTML() {
         <span class="mxc-prog"><i style="width:${Math.min(100, x.t * 100 / x.d)}%"></i></span></div>
       <div class="mxc-t">${esc(x.it.title)}</div><div class="mxc-s">${esc(x.it.artist || "")}</div></div>`).join("")}</div></div></div>`;
 }
-function contPlay(i) { const x = store.get("umc_cont", [])[i]; if (!x) return; const it = {...x.it}; store.set(posKey(it), x.t); playList([it], 0, {id: "cont", name: "Pick up where you left off"}); openPlayer(); }
+function contPlay(i) { const x = store.get("umc_cont", [])[i]; if (!x) return; const it = {...x.it}; if (SITE_NAMES.test(it.artist || "")) it.artist = ""; store.set(posKey(it), x.t); playList([it], 0, {id: "cont", name: "Pick up where you left off"}); openPlayer(); }
 /* a DJ's or show's page */
 let djCur = null;
 async function openDJ(idOrName, url) {
@@ -1780,7 +1791,7 @@ async function mixLink(url) {
     date: e.date ? Date.parse(e.date) / 1000 : 0, why: "From your link"};
   mixSheet(id, true);
 }
-const mixItem = (m, find) => ({mix_url: m.url, title: m.title, artist: m.channel || m.source, album: m.channel || "", cover: m.thumb, cover_big: m.thumb,
+const mixItem = (m, find) => ({mix_url: m.url, title: m.title, artist: m.channel || "", album: m.channel || "", cover: m.thumb, cover_big: m.thumb,
   duration: m.duration, _find: find || "", _mix: m.id});
 function mixPlayNow(id) {
   const m = MIXES[id]; if (!m) return;

@@ -46,7 +46,7 @@ def events(artist):
     except urllib.error.HTTPError as ex:
         if ex.code in (401, 403):
             if not REFUSED["at"]:
-                core.log(f"gigs: Bandsintown refused the app ID ({ex.code}); set GIGS_APP_ID to one Bandsintown gave you")
+                core.log(f"gigs: off for now, Bandsintown wants its own app ID (HTTP {ex.code}); set GIGS_APP_ID to turn gigs on")
             REFUSED.update(at=time.time(), why="Bandsintown isn't answering Umculo's requests (it now wants its own app ID). "
                            "Set GIGS_APP_ID to a key from Bandsintown to turn gigs back on.")
             return []

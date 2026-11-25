@@ -71,7 +71,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.8.0"
+VERSION = "3.8.1"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -113,6 +113,7 @@ CONFIG = {
     "usenet_max_mb": int(E("USENET_MAX_MB", "150")),
     "retry_days": int(E("RETRY_DAYS", "7")),
     "slsk_stall_s": int(E("SLSK_STALL_SECONDS", "600")),
+    "slsk_queue_s": int(E("SLSK_QUEUE_SECONDS", "150")),
     "stream_after_s": int(E("STREAM_FALLBACK_SECONDS", "300")),
     "slsk_empty_limit": int(E("SLSK_EMPTY_LIMIT", "8")),
     "slsk_pause_s": int(E("SLSK_PAUSE_SECONDS", "900")),
@@ -920,7 +921,7 @@ def dl_soulseek(req):
         got = int(f.get("bytesTransferred") or 0) or pct
         if got > last_bytes:
             last_bytes, last_move = got, time.time()
-        if stall and time.time() - last_move > stall:
+        if stall and time.time() - last_move > (stall if got else min(stall, CONFIG.get("slsk_queue_s") or stall)):
             slsk_cancel(user, f)
             raise RuntimeError("Peer too slow" if got else "Stuck in the peer's queue")
         msg = "Waiting in the peer's queue" if "Queued" in state else f"Downloading from Soulseek ({pct}%)"
@@ -2258,6 +2259,7 @@ SETTINGS = {   # key: (type, choices or None, description)
     "sources": (list, ["soulseek", "usenet", "hearthis", "soundcloud", "youtube"], "Sources for searches"),
     "batch_sources": (list, ["soulseek", "usenet", "hearthis", "soundcloud", "youtube"], "Sources for playlists"),
     "slsk_stall_s": (int, None, "Drop a Soulseek peer that doesn't move after (seconds)"),
+    "slsk_queue_s": (int, None, "Try the next Soulseek peer if one hasn't started sending after (seconds)"),
     "stream_after_s": (int, None, "Streaming sites join a playlist download after (seconds)"),
     "retry_days": (int, None, "Retry songs that weren't found after (days)"),
     "video_quality": (str, ["480", "720", "1080", "1440", "best"], "Mix video quality (watching and saving)"),

@@ -184,7 +184,7 @@ def view():
     with LOCK:
         wrong = [{"path": p, **v} for p, v in RESULTS.items() if v.get("verdict") == "wrong" and v.get("method", 1) >= METHOD
                  and os.path.exists(p)]
-        checked = sum(1 for v in RESULTS.values() if v.get("verdict") in ("ok", "wrong", "dismissed"))
+        checked = sum(1 for v in RESULTS.values() if v.get("verdict") in ("ok", "wrong", "dismissed") and v.get("method", 1) >= METHOD)
     wrong.sort(key=lambda x: (x.get("artist") or "").lower())
     return {**SCAN, "checked": checked, "suspects": [{k: x.get(k) for k in ("id", "artist", "title", "duration", "z", "catalogue",
                                                                          "cat_duration", "fixing")} for x in wrong]}
@@ -250,3 +250,15 @@ def init(umculo):
     global core
     core = umculo
     RESULTS.update(core._load_json("versions.json", {}) or {})
+    if any(v.get("method", 1) < METHOD for v in RESULTS.values()) and os.environ.get("UMCULO_TEST_VERSIONS") != "off":
+        threading.Thread(target=recheck_later, daemon=True).start()
+
+
+def recheck_later():
+    """The check got better since these songs were checked: check them again (in the background, once things settle)."""
+    time.sleep(600)
+    if SCAN["running"]:
+        return
+    SCAN.update(running=True, started=time.time())
+    core.log("wrong versions: checking songs again with the improved comparison")
+    run_scan(core.users.admin_user())
