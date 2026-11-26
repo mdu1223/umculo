@@ -71,7 +71,7 @@ import mixtidy  # noqa: E402
 import likes  # noqa: E402
 
 # --------------------------------------------------------------------------- config
-VERSION = "3.9.2"
+VERSION = "3.9.3"
 E = os.environ.get
 CONFIG = {
     "port": int(E("PORT", "8095")),
@@ -2063,7 +2063,7 @@ def _process_track(job, tr):
         below = []
         fast = bool(job.get("fast"))                 # songs from a mix you're playing: now beats perfect
         tr["_only_good"] = False
-        if not CONFIG["best_effort"] and not fast:   # only your quality: wait for it rather than settle
+        if not CONFIG["best_effort"] and not fast and not tr.get("any_quality"):   # only your quality: wait for it
             below = [c for c in picks if not good_enough(cscore(c))]
             good = [c for c in picks if good_enough(cscore(c))]
             if good and below and tr.get("good_fails", 0) >= 1:

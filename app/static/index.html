@@ -3611,11 +3611,11 @@ async function versionsBox() {                    // songs that aren't the recor
       ${v.running ? `<button class="btn small ghost" onclick="verAct('stop')">Stop</button>` : `<button class="btn small" onclick="verAct('scan')">${v.checked ? "Check new songs" : "Check"}</button>`}</div>
     ${v.running && v.total ? `<div class="bar"><i style="width:${Math.round(v.done * 100 / v.total)}%"></i></div>` : ""}
     ${sus.length ? `<div class="muted" style="margin:8px 0 4px">${plural(sus.length, "song")} sound${sus.length === 1 ? "s" : ""} like another version:</div>
-      ${sus.map(x => `<div class="set-row"><span>${esc(x.artist)} – ${esc(x.title)}<br><span class="muted" style="font-size:12px">${x.fixing ? "Getting the right version…" : `yours ${hms(x.duration || 0)}${x.cat_duration ? ` · album ${hms(x.cat_duration)}` : ""}${x.catalogue ? ` (${esc(x.catalogue)})` : ""}`}</span></span>
-        <span style="white-space:nowrap">${x.fixing ? "" : `<button class="btn small" onclick="verAct('fix', ['${x.id}'])">Get the right one</button>
+      ${sus.map(x => `<div class="set-row"><span>${esc(x.artist)} – ${esc(x.title)}<br><span class="muted" style="font-size:12px">${x.fixing ? `<span class="spin"></span> Getting the right version${x.fix_note ? ": " + esc(x.fix_note) : "…"}` : `${x.fix_note ? `<span style="color:var(--warn,#e0a040)">Last try: ${esc(x.fix_note)}</span><br>` : ""}yours ${hms(x.duration || 0)}${x.cat_duration ? ` · album ${hms(x.cat_duration)}` : ""}${x.catalogue ? ` (${esc(x.catalogue)})` : ""}`}</span></span>
+        <span style="white-space:nowrap">${x.fixing ? "" : `<button class="btn small" onclick="verAct('fix', ['${x.id}'])">${x.fix_note ? "Try again" : "Get the right one"}</button>
           <button class="btn small ghost" onclick="verAct('dismiss', ['${x.id}'])">It's fine</button>`}</span></div>`).join("")}
       ${sus.filter(x => !x.fixing).length > 1 ? `<button class="btn small" style="margin-top:8px" onclick="verAct('fix', ${esc(JSON.stringify(sus.filter(x => !x.fixing).map(x => x.id)))})">Get the right version of all ${sus.filter(x => !x.fixing).length}</button>` : ""}` : ""}</div>`;
-  if (v.running) verTimer = setTimeout(versionsBox, 3000);
+  if (v.running || sus.some(x => x.fixing)) verTimer = setTimeout(versionsBox, v.running ? 3000 : 6000);
 }
 async function verAct(what, ids) {
   try { const r = await api("/api/versions/" + what, {method: "POST", body: JSON.stringify({ids: ids || []})});

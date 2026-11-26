@@ -58,6 +58,27 @@ r = web("/api/versions/fix", "POST", {"ids": [wid]})
 check(r.get("queued") == 1 and r.get("job"), f"get the right version: queued {r}")
 jl = web("/api/playlists").get("jobs", [])
 check(any(j.get("name") == "Right versions" for j in jl), "as a download job")
+for _ in range(120):                                   # the mock sources don't have it: it comes back, saying why
+    x = next((x for x in web("/api/versions").get("suspects", []) if x["id"] == wid), {})
+    if not x.get("fixing"): break
+    time.sleep(0.5)
+check(x and not x.get("fixing") and x.get("fix_note"), f"not got: back on the list, saying why {x}")
+j = next(j for j in web("/api/playlists").get("jobs", []) if j.get("name") == "Right versions")
+jd = web(f"/api/playlists/jobs/{j['id']}")
+t0 = (jd.get("tracks") or [{}])[0]
+check(t0.get("quality") and t0.get("any_quality") is True, f"the job knows the copy's quality, and takes any quality {t0.get('quality')} {t0.get('any_quality')}")
+check(web("/api/versions/fix", "POST", {"ids": [wid]}).get("queued") == 1, "and can be tried again")
+for _ in range(120):
+    x = next((x for x in web("/api/versions").get("suspects", []) if x["id"] == wid), {})
+    if not x.get("fixing"): break
+    time.sleep(0.5)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app"))
+import versions as V
+for art, path, want in (("artist", "/m/Umculo/Caiphus Semenya/Caiphus Semenya - Angelina.mp3", "Caiphus Semenya"),
+                        ("", "/m/Umculo/Lauryn Hill/Ex-Factor.flac", "Lauryn Hill"),
+                        ("Unknown Artist", "/m/x/artist/artist - Song.mp3", "Unknown Artist"),
+                        ("Chief Keef", "/m/Umculo/Chief Keef/Love Sosa.wav", "Chief Keef")):
+    check(V.real_artist(art, path) == want, f"artist for {art!r} {path}: {V.real_artist(art, path)!r}")
 r = web("/api/versions/dismiss", "POST", {"ids": [wid]})
 check("Wrong One" not in [x["title"] for x in r.get("suspects", [])], "It's fine: put away")
 r = web("/api/versions/scan", "POST")

@@ -12,6 +12,7 @@ Used two ways:
 """
 import os
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -205,33 +206,151 @@ def current_ok(v):
     return v.get("verdict") in ("ok", "dismissed") and v.get("method", 1) >= OK_SINCE
 
 
+PLACEHOLDER = {"", "artist", "unknown", "unknown artist", "[unknown]", "various artists", "various", "va", "none"}
+
+
+def real_artist(artist, path):
+    """The artist, or (when the tag is a placeholder like "artist") the one in the file or folder name."""
+    a = (artist or "").strip()
+    if a.lower() not in PLACEHOLDER:
+        return a
+    stem = os.path.splitext(os.path.basename(path))[0]
+    if " - " in stem and stem.split(" - ", 1)[0].strip().lower() not in PLACEHOLDER:
+        return stem.split(" - ", 1)[0].strip()
+    folder = os.path.basename(os.path.dirname(path))
+    return folder if folder.lower() not in PLACEHOLDER else a
+
+
+def owner_of(path):
+    """The family member whose folder this file is in (None: the main library)."""
+    fam = core.CONFIG["family"]
+    if not path or not core.within(path, fam):
+        return None
+    return core.users.by_name(os.path.relpath(path, fam).split(os.sep)[0])
+
+
+def fix_track(path):
+    """The newest "Right versions" job song for this file (a copy), or None."""
+    best = None
+    with core.JOB_LOCK:
+        for j in core.JOBS.values():
+            if j.get("name") != "Right versions":
+                continue
+            for t in j["tracks"]:
+                if t.get("replace") and os.path.normpath(t.get("file") or "") == os.path.normpath(path) and \
+                        (best is None or j["created"] >= best[0]):
+                    best = (j["created"], dict(t))
+    return best[1] if best else None
+
+
+def settle():
+    """Songs being fixed: done -> off the list; not got (held back, not on your sources) -> back, saying why."""
+    with LOCK:
+        busy = [(p, v) for p, v in RESULTS.items() if v.get("verdict") == "wrong" and v.get("fixing")]
+    changed = False
+    for p, v in busy:
+        t = fix_track(p)
+        st = (t or {}).get("state")
+        if st in ("pending", "searching", "downloading"):
+            continue
+        with LOCK:
+            v["fixing"] = False
+            if st == "done" and t.get("new_file") and os.path.exists(t["new_file"]):
+                v["verdict"], v["fixed_to"] = "fixed", t["new_file"]
+            else:
+                v["fix_note"] = (t or {}).get("message") or "Couldn't get it this time"
+        changed = True
+    if changed:
+        save()
+
+
 def view():
+    settle()
     with LOCK:
         wrong = [{"path": p, **v} for p, v in RESULTS.items() if v.get("verdict") == "wrong" and v.get("method", 1) >= METHOD
                  and os.path.exists(p)]
         checked = sum(1 for v in RESULTS.values() if (v.get("verdict") in ("ok", "wrong", "dismissed") and v.get("method", 1) >= METHOD)
                       or current_ok(v))
+    for x in wrong:
+        x["artist"] = real_artist(x.get("artist"), x["path"])
+        if x.get("fixing"):
+            t = fix_track(x["path"])
+            x["fix_note"] = (t or {}).get("message") or ""
     wrong.sort(key=lambda x: (x.get("artist") or "").lower())
     return {**SCAN, "checked": checked, "suspects": [{k: x.get(k) for k in ("id", "artist", "title", "duration", "z", "catalogue",
-                                                                         "cat_duration", "fixing")} for x in wrong]}
+                                                                         "cat_duration", "fixing", "fix_note")} for x in wrong]}
 
 
 def fix(ids):
-    """Get the right version of these songs: download again (checked against the catalogue) and replace them."""
+    """Get the right version of these songs: download again (checked against the catalogue) and replace them.
+    Any quality will do (the wrong recording is worse than a lossy right one); a better copy is looked for later.
+    A song in a family member's folder is fixed as them, so the right one lands back in their folder."""
     if not core.users.can("download"):
         raise PermissionError("Getting songs needs download permission")
-    tracks = []
+    settle()
+    picked = []
     with LOCK:
         for p, v in RESULTS.items():
-            if v.get("id") in ids and v.get("verdict") == "wrong" and os.path.exists(p):
+            if v.get("id") in ids and v.get("verdict") == "wrong" and not v.get("fixing") and os.path.exists(p):
                 v["fixing"] = True
-                tracks.append({"artist": v["artist"], "title": v["title"], "duration": v.get("cat_duration") or v.get("duration") or 0,
-                               "file": p, "replace": True})
-    if not tracks:
-        return {"ok": True, "queued": 0}
-    jid = core.new_job("Right versions", "upgrade", "", tracks)
+                v.pop("fix_note", None)
+                picked.append((p, dict(v)))
+    groups = {}
+    for p, v in picked:
+        try:
+            tier, label = core.file_quality(p)
+        except Exception:  # noqa: BLE001
+            tier, label = "", ""
+        u = owner_of(p)
+        groups.setdefault(u["id"] if u else "", (u, []))[1].append(
+            {"artist": real_artist(v.get("artist"), p), "title": v["title"], "duration": v.get("cat_duration") or v.get("duration") or 0,
+             "file": p, "replace": True, "any_quality": True, "quality": label, "tier": tier})
+    jobs = []
+    prev = core.users.current()
+    for u, tracks in groups.values():
+        core.users.LOCAL.user = u or prev
+        try:
+            jobs.append(core.new_job("Right versions", "upgrade", "", tracks))
+        finally:
+            core.users.LOCAL.user = prev
     save()
-    return {"ok": True, "queued": len(tracks), "job": jid}
+    return {"ok": True, "queued": len(picked), "job": jobs[0] if jobs else None, "jobs": jobs}
+
+
+def repair():
+    """Fixes from 3.9.2 and before: a family member's song went into the main library (put it back in their folder),
+    and songs held back by the quality setting (get them, in the best quality there is)."""
+    core.users.LOCAL.user = core.users.admin_user()
+    moved = 0
+    with core.JOB_LOCK:
+        tracks = [t for j in core.JOBS.values() if j.get("name") == "Right versions" for t in j["tracks"] if t.get("replace")]
+    for t in tracks:
+        old, new = t.get("file") or "", t.get("new_file") or ""
+        u = owner_of(old)
+        if t.get("state") != "done" or not u or not new or not os.path.exists(new) or not core.within(new, core.CONFIG["library"]):
+            continue
+        dest_dir = os.path.join(core.users.music_root(u["id"]), os.path.basename(os.path.dirname(new)))
+        dest = os.path.join(dest_dir, os.path.basename(new))
+        if not core.within(dest_dir, core.users.folder(u)) or os.path.exists(dest):
+            continue
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+            shutil.move(new, dest)
+            core.replace_everywhere(new, dest)
+            t["new_file"] = dest
+            moved += 1
+        except OSError as ex:
+            core.log("wrong versions: couldn't move", new, ex)
+    if moved:
+        core.save_jobs()
+        core.request_scan()
+        core.log(f"wrong versions: put {core.plural(moved, 'song')} back in the family folder they came from")
+    settle()
+    with LOCK:
+        held = [v["id"] for v in RESULTS.values() if v.get("verdict") == "wrong" and "best effort is off" in (v.get("fix_note") or "")]
+    if held:
+        fix(held)
+        core.log(f"wrong versions: getting {core.plural(len(held), 'song')} that waited for a better quality")
 
 
 def dismiss(ids):
@@ -276,6 +395,8 @@ def init(umculo):
     global core
     core = umculo
     RESULTS.update(core._load_json("versions.json", {}) or {})
+    if os.environ.get("UMCULO_TEST_VERSIONS") != "off" or os.environ.get("UMCULO_TEST_REPAIR"):
+        threading.Thread(target=_repair_later, daemon=True).start()
     if any(v.get("method", 1) < METHOD and not current_ok(v) for v in RESULTS.values()) and os.environ.get("UMCULO_TEST_VERSIONS") != "off":
         threading.Thread(target=recheck_later, daemon=True).start()
 
@@ -288,3 +409,11 @@ def recheck_later():
     SCAN.update(running=True, started=time.time())
     core.log("wrong versions: checking songs again with the improved comparison")
     run_scan(core.users.admin_user())
+
+
+def _repair_later():
+    time.sleep(float(os.environ.get("UMCULO_REPAIR_AFTER", "90")))     # once the jobs are loaded and things settle
+    try:
+        repair()
+    except Exception as ex:  # noqa: BLE001
+        core.log("wrong versions: repair failed:", ex)
