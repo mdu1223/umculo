@@ -113,6 +113,27 @@ dj = web("/api/mixdj?name=DysFonik")
 check(dj.get("name") == "DysFonik" and dj.get("items") and all(m["duration"] >= 1200 for m in dj["items"]), f"a DJ page with their sets {dj.get('count')}")
 check(any(m.get("have") for m in dj["items"]) or True, "sets you have are marked")
 check(web("/api/mixdj").get("_code") == 400, "a DJ page needs a name")
+# a mix heard straight from the web (not kept): it can still be found again, from its page
+sh = web("/api/link", "POST", {"url": feedurl})
+ent = next((x["id"] for x in sh.get("entries") or [] if "041" in x.get("title", "")), None)
+wf = web("/api/link/find", "POST", {"show": sh.get("id"), "entry": ent, "keep": False}).get("id")
+for _ in range(120):
+    wv = web(f"/api/finds/{wf}")
+    if wv.get("state") in ("done", "failed"): break
+    time.sleep(1)
+check(wv.get("state") == "done" and wv.get("file") is False, f"heard from the web, not in the library {wv.get('state')} {wv.get('message')} {wv.get('file')}")
+check(wv.get("can_again") is True and (wv.get("page") or "").startswith("http"), f"and it can be found again {wv.get('can_again')} {wv.get('page')}")
+a1 = web(f"/api/finds/{wf}/again", "POST", {}).get("find")
+a2 = web(f"/api/finds/{wf}/again", "POST", {}).get("find")
+check(a1 and a1 != wf and a1 == a2, f"find again from its page, once {a1} {a2}")
+for _ in range(120):
+    av = web(f"/api/finds/{a1}")
+    if av.get("state") in ("done", "failed"): break
+    time.sleep(1)
+check(av.get("state") == "done" and av.get("count", 0) >= wv.get("count", 0), f"found again, nothing lost {av.get('state')} {av.get('count')} vs {wv.get('count')}")
+ids = [f["id"] for f in web("/api/mixes").get("finds", [])]
+check(a1 in ids and wf not in ids, "the earlier result made way for the new one")
+check(all(not isinstance(f.get("file"), str) for f in web("/api/mixes").get("finds", [])), "the list doesn't hand out where files are kept")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app"))
 import importlib.util
 spec = importlib.util.spec_from_file_location("mf", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "mixfeed.py")); mf = importlib.util.module_from_spec(spec); spec.loader.exec_module(mf)

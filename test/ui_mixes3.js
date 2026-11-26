@@ -116,6 +116,11 @@ async function main() {
   await p.evaluate(() => loadMixes()); await p.waitForTimeout(1500); await shot('finder-list');
   const finderText = await p.$eval('#mx-finds', e => e.innerText).catch(() => '');
   if (/mixs\b/.test(finderText)) probs.push('"mixs" in the song finder list');
+  const openBtn = await p.$('#mx-finds button:has-text("Open")');
+  if (openBtn) { await openBtn.click(); await p.waitForTimeout(1200); await shot('finder-window');
+    if (!/Find the songs again/.test(await panel())) probs.push("a finished mix's song finder window lacks Find the songs again");
+    await p.evaluate(() => closeSheet()); await p.waitForTimeout(300); }
+  else probs.push('no Open in the song finder list');
   // the hero's Download opens the mix window with its options
   const heroDl = await p.$('.mx-hero-acts button:has-text("Download")');
   if (heroDl) { await heroDl.click(); await p.waitForTimeout(1200);

@@ -1976,7 +1976,7 @@ function mixActBtn(it) {
 async function loadMixes() {
   clearTimeout(mixTimer);
   let r; try { r = await api("/api/mixes"); } catch (e) { $("#mx-subs").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-  const fewN = r.finds.filter(f => f.state === "done" && f.file && (!f.count || f.count < (f.duration || 0) / 600)).length;
+  const fewN = r.finds.filter(f => f.can_again && (!f.count || f.count < (f.duration || 0) / 600)).length;
   $("#mx-finds").innerHTML = r.finds.length ? `<div class="mx-head"><h2>Song finder</h2>${fewN ? `<button class="btn small ghost" onclick="findAgainFew(this)" title="Mixes that found fewer than a song every 10 minutes: most were listened to before the song finder got better">Find again in ${plural(fewN, "mix")} that found few</button>` : ""}</div>` + r.finds.map(f => `<div class="box rowline">
       ${f.cover ? `<img class="cover" src="${esc(f.cover)}" alt="" onerror="this.style.visibility='hidden'">` : ""}
       <div class="meta"><div class="t">${esc(f.title)}</div><div class="muted">${esc(f.show || "")}</div>
@@ -1984,7 +1984,7 @@ async function loadMixes() {
       ${["queued","downloading","listening"].includes(f.state) ? `<div class="bar"><i style="width:${Math.max(3, f.progress||0)}%"></i></div>` : ""}</div>
       <div class="chips" style="flex-direction:column;flex-wrap:nowrap"><button class="btn small ghost" onclick="openFind('${f.id}')">Open</button>
       ${["queued","downloading","listening"].includes(f.state) ? `<button class="btn small ghost" onclick="findRemove('${f.id}', true)">Stop</button>`
-        : f.file ? `<button class="btn small ghost" onclick="findAgain('${f.id}', this)">Find again</button>` : ""}</div></div>`).join("") : "";
+        : f.can_again ? `<button class="btn small ghost" onclick="findAgain('${f.id}', this)">Find again</button>` : ""}</div></div>`).join("") : "";
   if (!r.recognition) $("#mx-finds").innerHTML += `<div class="muted" style="margin:6px 4px">Audio recognition isn't installed, so the song finder can only read published tracklists.</div>`;
   $("#mx-subs").innerHTML = `<h2>Subscriptions <span class="count">${r.subscriptions.length}</span></h2>` + r.pending.map(t => `<div class="box rowline"><div class="cover"></div>
       <div class="meta"><div class="t">${esc(t)}</div><div class="muted"><span class="spin"></span>Subscribing… reading the channel</div></div></div>`).join("") + (r.subscriptions.length ? r.subscriptions.map(s => `<div class="box rowline">
@@ -2024,12 +2024,13 @@ async function openFind(id) {
       ${!busy ? `<input class="field" id="find-name" value="${esc(f.title)}" placeholder="Playlist name">
       <button class="btn" onclick="findGet('${f.id}')">Get ticked songs as a playlist</button>
       <div class="muted" style="margin-top:8px">Each song is fetched in the best quality Umculo can find, the same way playlist imports work.</div>` : ""}` : ""}
-    <div class="chips" style="margin-top:12px"><button class="btn small ghost" onclick="findRemove('${f.id}', ${busy})">${busy ? "Stop and remove" : "Remove from list"}</button></div>`;
+    <div class="chips" style="margin-top:12px">${f.can_again ? `<button class="btn small ghost" onclick="findAgain('${f.id}', this, true)">Find the songs again</button>` : ""}
+      <button class="btn small ghost" onclick="findRemove('${f.id}', ${busy})">${busy ? "Stop and remove" : "Remove from list"}</button></div>`;
   if ($("#sheet").classList.contains("open")) setPanel(html); else openSheet(html);
   if (busy) findTimer = setTimeout(() => { if ($("#sheet").classList.contains("open")) openFind(id); }, 4000);
 }
-async function findAgain(id, btn) {
-  await busy(btn, async () => { await api(`/api/finds/${id}/again`, {method: "POST"}); toast("Listening to the mix again; what it found before stays until it's done"); loadMixes(); });
+async function findAgain(id, btn, close) {
+  await busy(btn, async () => { await api(`/api/finds/${id}/again`, {method: "POST"}); if (close) closeSheet(); toast("Listening to the mix again; what it found before stays until it's done"); loadMixes(); });
 }
 async function findAgainFew(btn) {
   await busy(btn, async () => { const r = await api("/api/finds/again-few", {method: "POST"});

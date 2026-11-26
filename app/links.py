@@ -877,9 +877,39 @@ def find_again(f):
         raise PermissionError("The song finder needs download permission")
     path = f.get("file") or f.get("local")
     if not path or not os.path.exists(path):
+        if can_again(f):                           # heard from the web before: listen from there again
+            return again_from_page(f)
         raise ValueError("This mix isn't in your library any more; download it again first")
     return start_local_find(path, f["title"], f.get("show") or "", int(f.get("duration") or 0), f.get("cover") or "",
                             (f.get("entry") or {}).get("page") or "", f.get("get"), again=True)
+
+
+def can_again(f):
+    """Can the song finder listen to this mix once more: its copy in your library, or the web page it came from."""
+    path = f.get("file") or f.get("local")
+    return bool(path and os.path.exists(path)) or ((f.get("entry") or {}).get("page") or "").startswith("http")
+
+
+def again_from_page(f):
+    """Find the songs again in a mix that was heard straight from the web (it's not in your library)."""
+    with LOCK:
+        busy = next((x for x in FINDS.values() if f["id"] in (x.get("replaces") or [])
+                     and x["state"] in ("queued", "downloading", "listening")), None)
+        if busy:
+            return busy["id"]                        # already listening to it
+    e = dict(f.get("entry") or {})                   # its tracklist (read the first time) comes along
+    fid = uuid.uuid4().hex[:12]
+    n = {"id": fid, "title": f["title"], "show": f.get("show") or "", "video": bool(f.get("video")), "cover": f.get("cover") or "",
+         "duration": f.get("duration") or 0, "state": "queued", "progress": 0, "message": "Waiting its turn", "tracks": [],
+         "created": time.time(), "keep": False, "auto": False, "show_data": dict(f.get("show_data") or {"kind": "single",
+         "podcast": False, "title": f.get("show") or "", "author": f.get("show") or "", "cover": f.get("cover") or "",
+         "feed": "", "url": ""}), "entry": e, "owner": f.get("owner") or core.users.me_key(), "get": bool(f.get("get")),
+         "replaces": [f["id"]]}
+    with LOCK:
+        FINDS[fid] = n
+    save_finds()
+    FIND_POOL.submit(run_find, n)
+    return fid
 
 
 def few(f):
@@ -891,11 +921,10 @@ def few(f):
 def again_few():
     """Find the songs again in every mix of yours that found few (most were listened to before the finder got better)."""
     with LOCK:
-        todo = [f for f in FINDS.values() if core.users.mine(f) and f.get("state") == "done" and few(f)
-                and (f.get("file") or f.get("local")) and os.path.exists(f.get("file") or f.get("local"))]
+        todo = [f for f in FINDS.values() if core.users.mine(f) and f.get("state") == "done" and few(f) and can_again(f)]
     files, started = set(), 0
     for f in sorted(todo, key=lambda f: -f.get("created", 0)):
-        p = f.get("file") or f.get("local")
+        p = f.get("file") or f.get("local") or (f.get("entry") or {}).get("page")
         if p in files:
             continue
         files.add(p)
@@ -1398,6 +1427,8 @@ def view_find(f, full=False):
     out = {k: f.get(k) for k in keys}
     out["page"] = (f.get("entry") or {}).get("page") or ""          # which mix this is (the mix window shows its progress)
     out["count"] = len(f.get("tracks") or [])
+    out["file"] = bool(f.get("file"))                # don't hand out where it's kept, only whether it's there
+    out["can_again"] = f.get("state") == "done" and can_again(f)
     if full:
         got = get_states(f) if f.get("get_job") else {}
         out["tracks"] = [{**t, "getting": got.get(core.song_key(clean_artist(t["artist"]), t["title"])) or got.get("t:" + title_key(t["title"])) or ""}
