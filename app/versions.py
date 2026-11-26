@@ -246,20 +246,29 @@ def fix_track(path):
 def settle():
     """Songs being fixed: done -> off the list; not got (held back, not on your sources) -> back, saying why."""
     with LOCK:
-        busy = [(p, v) for p, v in RESULTS.items() if v.get("verdict") == "wrong" and v.get("fixing")]
+        busy = [(p, v) for p, v in RESULTS.items() if v.get("verdict") == "wrong" and (v.get("fixing") or v.get("fix_note"))]
     changed = False
     for p, v in busy:
         t = fix_track(p)
         st = (t or {}).get("state")
-        if st in ("pending", "searching", "downloading"):
+        if st in ("pending", "searching", "downloading") or (t or {}).get("retry_at", 0) > time.time():
+            if not v.get("fixing"):                  # going again (Soulseek didn't answer: it tries again by itself)
+                with LOCK:
+                    v["fixing"] = True
+                    v.pop("fix_note", None)
+                changed = True
             continue
-        with LOCK:
-            v["fixing"] = False
-            if st == "done" and t.get("new_file") and os.path.exists(t["new_file"]):
+        if st == "done" and t.get("new_file") and os.path.exists(t["new_file"]):
+            with LOCK:
+                v["fixing"] = False
+                v.pop("fix_note", None)
                 v["verdict"], v["fixed_to"] = "fixed", t["new_file"]
-            else:
+            changed = True
+        elif v.get("fixing"):
+            with LOCK:
+                v["fixing"] = False
                 v["fix_note"] = (t or {}).get("message") or "Couldn't get it this time"
-        changed = True
+            changed = True
     if changed:
         save()
 

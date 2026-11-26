@@ -61,6 +61,14 @@ check(ids.get("h", {}).get("fixing") and "Soulseek" in (ids["h"].get("fix_note")
 th.update(state="kept", message="Waiting for your quality: only OPUS 133 found (best effort is off)")
 x = {x["id"]: x for x in V.view()["suspects"]}["h"]
 check(not x["fixing"] and "OPUS 133" in x["fix_note"], f"not got: back, saying why {x}")
+th.update(state="not_found", message="Soulseek didn't answer; trying again in an hour", retry_at=__import__("time").time() + 3600)
+x = {x["id"]: x for x in V.view()["suspects"]}["h"]
+check(x["fixing"] and "trying again" in x["fix_note"], f"Soulseek didn't answer: still being fixed (it tries again by itself) {x}")
+newh = touch(os.path.join(fam, "khaya", "Music", "Lionel Richie", "Lionel Richie - Stuck on You (right).flac"))
+th.update(state="done", new_file=newh, message="Upgraded from FLAC", retry_at=0)
+check("h" not in {x["id"] for x in V.view()["suspects"]}, "and when the try later gets it: off the list")
+V.RESULTS[his].update(verdict="wrong", fixing=False, fix_note="old")
+th.update(state="kept", message="Waiting")
 
 # 3. repair (before 3.9.3): khaya's song had gone into the main library -> back in his folder; held-back ones retried
 made.clear(); core.JOBS.clear(); moved_refs.clear()

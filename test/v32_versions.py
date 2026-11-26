@@ -58,16 +58,16 @@ r = web("/api/versions/fix", "POST", {"ids": [wid]})
 check(r.get("queued") == 1 and r.get("job"), f"get the right version: queued {r}")
 jl = web("/api/playlists").get("jobs", [])
 check(any(j.get("name") == "Right versions" for j in jl), "as a download job")
-for _ in range(120):                                   # the mock sources don't have it: it comes back, saying why
+for _ in range(120):          # the mock sources don't have it: it says why (Soulseek silent: it tries again by itself)
     x = next((x for x in web("/api/versions").get("suspects", []) if x["id"] == wid), {})
-    if not x.get("fixing"): break
+    if x.get("fix_note") and not any(w in x["fix_note"] for w in ("Looking", "Getting", "Downloading")): break
     time.sleep(0.5)
-check(x and not x.get("fixing") and x.get("fix_note"), f"not got: back on the list, saying why {x}")
+check(x and x.get("fix_note") and (not x.get("fixing") or "trying again" in x["fix_note"]), f"not got: on the list, saying why {x}")
 j = next(j for j in web("/api/playlists").get("jobs", []) if j.get("name") == "Right versions")
 jd = web(f"/api/playlists/jobs/{j['id']}")
 t0 = (jd.get("tracks") or [{}])[0]
 check(t0.get("quality") and t0.get("any_quality") is True, f"the job knows the copy's quality, and takes any quality {t0.get('quality')} {t0.get('any_quality')}")
-check(web("/api/versions/fix", "POST", {"ids": [wid]}).get("queued") == 1, "and can be tried again")
+check(web("/api/versions/fix", "POST", {"ids": [wid]}).get("queued") == (0 if x.get("fixing") else 1), "tried again when it isn't already")
 for _ in range(120):
     x = next((x for x in web("/api/versions").get("suspects", []) if x["id"] == wid), {})
     if not x.get("fixing"): break
