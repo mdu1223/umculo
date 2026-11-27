@@ -10,6 +10,7 @@ Apple Podcasts or any podcast RSS feed. Umculo can then
 import asyncio
 import email.utils
 import html
+import itertools
 import json
 import os
 import re
@@ -1171,7 +1172,45 @@ class Pacer:
 
 
 PACER = Pacer()
-SHAZAM_SLOTS = threading.BoundedSemaphore(4)
+
+
+class Gate:
+    """One line to Shazam for every song finder: at most SLOTS lookups at once, the best waiting one next:
+    the mix you're playing, then every mix's first pass (one bit every few minutes), then the rest.
+    Before 3.9.10 each mix's listeners queued on their own: when Shazam's pause ended they all asked at once,
+    were all turned away, and the pause grew; with several mixes at once almost nothing got through."""
+    SLOTS = 2
+
+    def __init__(self):
+        self.cv, self.busy, self.waiting, self.seq = threading.Condition(), 0, [], itertools.count()
+
+    @staticmethod
+    def rank(w):
+        return (0 if watched(w["f"]) else 1, 0 if w["round"]() == 0 else 1, w["seq"])
+
+    def acquire(self, f, rnd=lambda: 0):
+        w = {"f": f, "round": rnd, "seq": next(self.seq)}
+        with self.cv:
+            self.waiting.append(w)
+            try:
+                while not f.get("cancel"):
+                    gap = PACER.until - time.time()
+                    if gap <= 0 and self.busy < self.SLOTS and min(self.waiting, key=self.rank) is w:
+                        self.busy += 1
+                        return True
+                    self.cv.wait(timeout=min(max(gap, 0.2), 2) if gap > 0 else 2)
+                return False
+            finally:
+                self.waiting.remove(w)
+                self.cv.notify_all()
+
+    def release(self):
+        with self.cv:
+            self.busy -= 1
+            self.cv.notify_all()
+
+
+GATE = Gate()
 
 
 def watched(f):
@@ -1189,16 +1228,6 @@ def watch(f):
     if start:
         log("song finder: you're playing", f.get("title"), "- listening to it first")
         threading.Thread(target=run_find, args=(f, True), daemon=True).start()
-
-
-def make_way(f):
-    """Another mix is being played and listened to: this one (in the background) leaves it most of Shazam's pace."""
-    if watched(f):
-        return
-    with LOCK:
-        busy = any(x is not f and x.get("state") == "listening" and watched(x) for x in FINDS.values())
-    if busy:
-        time.sleep(8)
 
 
 def run_find(f, started=False):
@@ -1258,7 +1287,9 @@ def run_find(f, started=False):
                 pc = int(n * 70 / max(len(first), 1)) if state["round"] == 0 else min(97, 70 + state["round"] * 10)
                 fset(f, state="listening", progress=min(pc, 97),
                      message=f"Listening: {n} bits of the mix so far · {len(heard)} heard"
-                     + (" · Shazam asked us to slow down for a moment" if waiting else ""),
+                     + (" · Shazam asked us to slow down for a moment" if waiting else
+                        " · the mix you're playing goes first" if not watched(f) and any(w["f"] is not f and watched(w["f"])
+                                                                                        for w in list(GATE.waiting)) else ""),
                      **({"tracks": merge_tracks(listed, list(heard))} if hit_now else {}))
 
             def one(off):
@@ -1282,11 +1313,13 @@ def run_find(f, started=False):
                     for _attempt in range(60):           # Shazam allows a burst, then a few a minute: wait our turn
                         if f.get("cancel"):
                             return
-                        make_way(f)
-                        PACER.wait(f)
+                        if not GATE.acquire(f, lambda: state["round"]):
+                            return
                         try:
-                            with SHAZAM_SLOTS:
+                            try:
                                 hit = local.rec(wav, off)
+                            finally:
+                                GATE.release()
                             PACER.ok()
                             with lock:
                                 state["fails"] = 0

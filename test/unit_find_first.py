@@ -23,20 +23,40 @@ check(len(ran) == 1, "and only once, however often the player asks")
 links.run_find = real_run
 check(links.run_find(q) is None and q["state"] == "queued", "its turn in the queue comes later: it's already going, nothing happens")
 
-# background mixes make way while the one you're playing is listened to
-slept = []
-real_sleep = links.time.sleep
-links.time.sleep = lambda s: slept.append(s)
-bg = {"id": "b1", "state": "listening"}
-fg = {"id": "f1", "state": "listening", "watched": time.time()}
-links.FINDS.update(b1=bg, f1=fg)
-links.make_way(bg)
-check(slept == [8], f"a background mix waits while you play another {slept}")
-slept.clear(); links.make_way(fg)
-check(slept == [], "the one you're playing doesn't wait")
-fg["watched"] = time.time() - 60; links.make_way(bg)
-check(slept == [], "nobody playing: everyone at full pace")
-links.time.sleep = real_sleep
+# one line to Shazam: the mix you're playing first, then every mix's first pass, then the rest; at most two at once
+import threading
+links.FINDS.clear()
+G = links.Gate()
+order, lock = [], threading.Lock()
+bg_refine = {"id": "r", "state": "listening"}
+bg_first = {"id": "p", "state": "listening"}
+playing = {"id": "w", "state": "listening", "watched": time.time()}
+G.busy = G.SLOTS                                   # Shazam busy: everyone queues
+def ask(f, rnd, name):
+    if G.acquire(f, lambda: rnd):
+        with lock: order.append(name)
+        time.sleep(0.05); G.release()
+ts = [threading.Thread(target=ask, args=a) for a in ((bg_refine, 2, "refine"), (bg_first, 0, "first"), (playing, 3, "playing"),
+                                                      (bg_refine, 2, "refine2"))]
+for t in ts: t.start(); time.sleep(0.05)
+G.release(); G.release()                           # Shazam free again
+for t in ts: t.join(10)
+check(order[:2] == ["playing", "first"] and set(order[2:]) == {"refine", "refine2"}, f"the mix you're playing, then first passes {order}")
+peak = []
+def ask2(i):
+    if G.acquire({"id": str(i)}):
+        with lock: peak.append(G.busy)
+        time.sleep(0.05); G.release()
+ts = [threading.Thread(target=ask2, args=(i,)) for i in range(8)]
+for t in ts: t.start()
+for t in ts: t.join(10)
+check(len(peak) == 8 and max(peak) <= G.SLOTS, f"never more than {G.SLOTS} lookups at once {peak}")
+links.PACER.until = time.time() + 1.0             # Shazam asked us to wait: nobody asks before then
+t0 = time.time(); G.acquire({"id": "z"}); G.release()
+check(time.time() - t0 >= 0.9, "and nobody asks while Shazam says wait")
+links.PACER.until = 0
+cancelled = {"id": "c", "cancel": True}
+check(G.acquire(cancelled) is False and not G.waiting, "a stopped mix leaves the line")
 
 # after a restart an unfinished mix starts over (the "already going" mark doesn't survive)
 import json, tempfile
