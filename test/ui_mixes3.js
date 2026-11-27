@@ -76,6 +76,12 @@ async function main() {
   await p.evaluate(() => { npView = 'next'; renderPlayer(); }); await p.waitForTimeout(2500); await shot('player-songs');
   const host = await p.evaluate(() => npHost().innerText);
   if (!/in this mix/i.test(host) || !/Find again/.test(host)) probs.push('the player lacks In this mix / Find again: ' + host.slice(0, 200));
+  const live = await p.evaluate(() => {           // your library's copy of a mix the song finder is still listening to
+    const it = {nd_id: "live-test", title: "Live mix", artist: "X", duration: 3600};
+    chapCache[chapKey(it)] = {state: "listening", progress: 40, message: "Listening: 6 heard", tracks: [{t: 30, artist: "Heard Artist", title: "Heard Song"}]};
+    const h = chapHTML(it); delete chapCache[chapKey(it)]; return h;
+  });
+  if (!/In this mix/.test(live) || !/Heard Song/.test(live)) probs.push("songs heard so far don't show while listening to a library mix: " + live.slice(0, 200));
   await p.evaluate(() => { $('#player').pause(); closeSheet(); if (desk()) closeNp(); });
   // 6. delete it: gone from the library, the song finder list and the window
   await p.evaluate(() => mixSheet('t')); await p.waitForTimeout(1500);

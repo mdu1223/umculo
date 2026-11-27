@@ -3266,7 +3266,7 @@ function chapLine(it) {
 }
 function chapHTML(it) {
   const c = chapFor(it); if (!c || c.state === "loading") return "";
-  if (it._find && ["queued", "downloading", "listening"].includes(c.state) && c.tracks.length) {      // songs as they're heard
+  if (["queued", "downloading", "listening"].includes(c.state) && c.tracks.length) {   // songs as they're heard (streamed, or your library's copy)
     const k = chapAt(c, $("#player").currentTime);
     return `<div class="np-uph"><h2>In this mix <span class="count">${c.tracks.length}</span></h2></div>
       <div class="chap-msg muted"><span class="spin"></span><span id="chap-msg">${esc(c.message || "Listening")}</span></div>
