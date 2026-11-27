@@ -68,5 +68,16 @@ old = [{"t": 300, "artist": "Sooks & Dwson", "title": "Before The Hunt", "from":
 t2 = links.tidy(old, 3453)
 check([t["title"] for t in t2] == ["GotMe", "Before The Hunt", "Memories", "Imali", "Invited"], f"an old list tidied {[t['title'] for t in t2]}")
 check(links.tidy(t2, 3453) == t2, "tidying twice changes nothing")
+# found before 3.9.5 (no tracklist order kept): the order is read again from the description kept with the mix
+desc = "\n".join(f"{i + 1} - {a} - {t}" for i, (a, t) in enumerate(LISTED))
+f = {"duration": 3453, "entry": {"description": desc}, "tracks": [{**t, "t": t.get("t")} for t in t2 if True] + [
+    {"t": None, "artist": "Atjazz", "title": "Track 4 (Mix 2)", "from": "tracklist", "hits": 0}]}
+for t in f["tracks"]:
+    t.pop("n", None); t.pop("about", None)
+links.order_by_tracklist(f)
+t3 = links.tidy(f["tracks"], 3453)
+inv = next(t for t in t3 if t["title"] == "Invited")
+check(300 < (inv.get("about") or 0) < 1380 and [t["title"] for t in t3][2] == "Invited", f"an old list: placed by the description {[(t['title'], t.get('about')) for t in t3]}")
+check(t3[-1]["title"] == "Track 4 (Mix 2)" and t3[-1].get("about"), "the last song of the tracklist at the end, with a time")
 print(f"MERGE OK {n}" if not bad else f"MERGE FAILED {len(bad)}/{n}")
 sys.exit(1 if bad else 0)

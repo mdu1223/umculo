@@ -1677,15 +1677,34 @@ def after_jobs():
     threading.Thread(target=_repair, daemon=True).start()
 
 
+def order_by_tracklist(f):
+    """Found before 3.9.5: where each song sits in the tracklist (read again from the description kept with the mix)."""
+    ts = f.get("tracks") or []
+    if not any(t.get("t") is None and t.get("n") is None for t in ts):
+        return
+    e = f.get("entry") or {}
+    listed = parse_tracklist(e.get("description", ""), e.get("chapters"))
+    for t in ts:
+        if t.get("n") is not None or t.get("from") not in ("tracklist", "both"):
+            continue
+        names = [t] + ([{"artist": t["listed_as"].split(" - ", 1)[0], "title": t["listed_as"].split(" - ", 1)[-1]}] if t.get("listed_as") else [])
+        n = next((i for i, x in enumerate(listed) for y in names
+                  if core.song_key(clean_artist(x["artist"]), x["title"]) == core.song_key(clean_artist(y["artist"]), y["title"])
+                  or same_song(x, y)), None)
+        if n is not None:
+            t["n"] = n
+
+
 def _repair():
     """Fix songs queued from numbered tracklists before 3.3.1; tidy songs found before 3.9.5 (doubles, misheard)."""
     tidied = 0
     for f in list(FINDS.values()):
-        if f.get("state") == "done" and f.get("tidy", 0) < 1:
+        if f.get("state") == "done" and f.get("tidy", 0) < 2:
             try:
                 before = len(f.get("tracks") or [])
+                order_by_tracklist(f)
                 f["tracks"] = tidy(f.get("tracks") or [], f.get("duration") or 0)
-                f["tidy"] = 1
+                f["tidy"] = 2
                 if before != len(f["tracks"]):
                     tidied += 1
                     f["message"] = re.sub(r"^Found [\d,]+ songs?", f"Found {core.plural(len(f['tracks']), 'song')}", f.get("message") or "")
