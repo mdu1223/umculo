@@ -1188,7 +1188,7 @@ class Gate:
 
     @staticmethod
     def rank(w):
-        return (0 if watched(w["f"]) else 1, 0 if w["round"]() == 0 else 1, w["seq"])
+        return (0 if watched(w["f"]) else 1, w["round"](), w["seq"])     # the earliest pass of any mix first
 
     def acquire(self, f, rnd=lambda: 0):
         w = {"f": f, "round": rnd, "seq": next(self.seq)}
@@ -1283,6 +1283,18 @@ def run_find(f, started=False):
             os.makedirs(tmpdir, exist_ok=True)
             first = first_pass(dur, step)
             cap = int(dur // max(step // 2, 1)) + 4      # never more than a bit every half step
+            saved = f.get("bits") if f.get("bits_of") == [src if not src.startswith("http") else e.get("page") or src, dur] else None
+            if saved:                                    # restarted (an update): carry on, don't ask Shazam again
+                for k, v in saved.items():
+                    res[int(k)] = tuple(v) if v else None
+                    if v:
+                        heard.append({"t": int(k), "artist": v[0], "title": v[1]})
+                heard.sort(key=lambda x: x["t"])
+                state["n"], state["round"] = len(res), int(f.get("bits_round") or 0)
+                log(f"song finder: {f['title']}: carrying on from {len(res)} bits listened to before the restart")
+            else:
+                f["bits"] = {}
+            f["bits_of"] = [src if not src.startswith("http") else e.get("page") or src, dur]
 
             def say(hit_now=False):
                 n, waiting = state["n"], PACER.until > time.time()
@@ -1344,6 +1356,8 @@ def run_find(f, started=False):
                             break
                 with lock:
                     res[off] = (hit[0], hit[1]) if hit else None
+                    if wav:                              # kept, so a restart carries on from here
+                        f.setdefault("bits", {})[str(off)] = [hit[0], hit[1]] if hit else None
                     state["n"] += 1
                     state["secs"] += time.time() - t0
                     if hit:
@@ -1366,11 +1380,18 @@ def run_find(f, started=False):
                 want_songs(f, listed)
             say()
             try:
-                batch = first                            # the whole mix first (quick), then the rest of it (see refine)
+                songs = lambda: {core.song_key(*v) for v in list(res.values()) if v}
+                batch = [o for o in first if o not in res] if state["round"] == 0 else \
+                    [o for o in refine(res, step, dur, state["round"]) if o not in res]
                 with cf.ThreadPoolExecutor(max_workers=max(1, min(CFG["listeners"], 4))) as pool:
                     while batch and not f.get("cancel") and not state["stop"] and len(res) < cap:
+                        before = songs()
                         list(pool.map(one, batch[:cap - len(res)]))
+                        if state["round"] >= 1 and not (songs() - before) and not f.get("cancel"):
+                            log(f"song finder: {f['title']}: a whole pass found no new song, done listening")
+                            break                        # nothing new any more: the rest would only hear them again
                         state["round"] += 1
+                        f["bits_round"] = state["round"]
                         batch = [o for o in refine(res, step, dur, state["round"]) if o not in res]
             finally:
                 for r in made:
@@ -1388,6 +1409,8 @@ def run_find(f, started=False):
         if f.get("cancel"):
             raise Stopped()
         tracks = merge_tracks(listed, heard, f.get("duration") or 0)
+        for k in ("bits", "bits_of", "bits_round"):        # listened to the end: what was asked isn't needed any more
+            f.pop(k, None)
         if f.get("get"):
             name_fallback(f, tracks)
         replaced = [o for o in (FINDS.get(x) for x in f.get("replaces") or []) if o]

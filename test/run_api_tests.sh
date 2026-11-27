@@ -16,6 +16,7 @@ if python3 test/unit_same_recording.py >/dev/null 2>&1; then echo "PASS same-rec
 if python3 test/unit_versions_fix.py >/dev/null 2>&1; then echo "PASS versions-fix"; else echo "FAIL versions-fix"; python3 test/unit_versions_fix.py; FAIL=1; fi
 if python3 test/unit_song_merge.py >/dev/null 2>&1; then echo "PASS song-merge"; else echo "FAIL song-merge"; python3 test/unit_song_merge.py; FAIL=1; fi
 if python3 test/unit_find_first.py >/dev/null 2>&1; then echo "PASS find-first"; else echo "FAIL find-first"; python3 test/unit_find_first.py; FAIL=1; fi
+if python3 test/unit_find_resume.py >/dev/null 2>&1; then echo "PASS find-resume"; else echo "FAIL find-resume"; python3 test/unit_find_resume.py | tail -8; FAIL=1; fi
 run api      8098 python3 test/v20_api.py 8098 mdu ndpass
 run family   8099 python3 test/v20_family.py 8099
 run api21    8100 python3 test/v21_api.py 8100 mdu ndpass
