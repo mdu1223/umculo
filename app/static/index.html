@@ -2018,9 +2018,9 @@ async function openFind(id) {
     ${busy ? `<div class="bar"><i style="width:${Math.max(3, f.progress||0)}%"></i></div>` : ""}
     ${f.tracks.length ? `<div class="box" style="margin-top:10px">${f.tracks.map(t => `<label class="chk">
         <input type="checkbox" data-i="${t.i}" ${t.owned ? "" : "checked"}>
-        <span class="time">${t.t != null ? hms(t.t) : ""}</span>
+        <span class="time">${t.t != null || t.about != null ? chapTime(t) : ""}</span>
         <span class="meta"><b>${esc(t.title)}</b> <span class="muted">${esc(t.artist)}</span><br>
-        <span class="muted">${src[t.from] || t.from}${t.hits > 1 ? ` ×${t.hits}` : ""}${t.owned ? ` · <span style="color:var(--high)">in your library · ${esc(t.owned)}</span>` : ""}</span></span></label>`).join("")}</div>
+        <span class="muted">${src[t.from] || t.from}${t.hits > 1 ? ` ×${t.hits}` : ""}${t.listed_as ? ` · listed as ${esc(t.listed_as)}` : ""}${t.owned ? ` · <span style="color:var(--high)">in your library · ${esc(t.owned)}</span>` : ""}</span></span></label>`).join("")}</div>
       ${!busy ? `<input class="field" id="find-name" value="${esc(f.title)}" placeholder="Playlist name">
       <button class="btn" onclick="findGet('${f.id}')">Get ticked songs as a playlist</button>
       <div class="muted" style="margin-top:8px">Each song is fetched in the best quality Umculo can find, the same way playlist imports work.</div>` : ""}` : ""}
@@ -3255,7 +3255,8 @@ async function loadChap(it) {
   }
   if (pq[pi] === it && npOpen() && npView !== "lyrics") renderPlayer();
 }
-function chapAt(c, t) { let k = -1; (c?.tracks || []).forEach((x, i) => { if (x.t != null && x.t <= t + 1) k = i; }); return k; }
+function chapAt(c, t) { let k = -1; (c?.tracks || []).forEach((x, i) => { const at = x.t ?? x.about; if (at != null && at <= t + 1) k = i; }); return k; }
+const chapTime = x => x.t != null ? hms(x.t) : x.about != null ? "~" + hms(x.about) : "–";   // ~: placed by the tracklist's order
 function chapLine(it) {
   const c = chapFor(it); if (!c || !c.tracks?.length) return "";
   const k = chapAt(c, $("#player").currentTime), x = c.tracks[k];
@@ -3287,8 +3288,8 @@ function chapHTML(it) {
 const GETTING = {pending: "queued", searching: "searching…", downloading: "downloading…", filing: "downloading…", scanning: "downloading…",
   not_found: "not found on your sources", failed: "couldn't get it", cancelled: "stopped"};
 function chapRow(x, i, k) {
-  return `<div class="qrow chap${i === k ? " on" : ""}" data-ci="${i}" ${x.t != null ? `onclick="chapSeek(${x.t})"` : ""}>
-      <span class="time">${x.t != null ? hms(x.t) : "–"}</span><div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}${x.owned || x.getting === "done" ? ` · <span class="own">in your library</span>` : x.getting ? ` · <span class="getting ${x.getting}">${GETTING[x.getting] || "getting it"}</span>` : ""}</div></div>
+  return `<div class="qrow chap${i === k ? " on" : ""}" data-ci="${i}" ${(x.t ?? x.about) != null ? `onclick="chapSeek(${x.t ?? x.about})"` : ""}>
+      <span class="time" ${x.t == null && x.about != null ? `title="About here, going by the tracklist's order"` : ""}>${chapTime(x)}</span><div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}${x.owned || x.getting === "done" ? ` · <span class="own">in your library</span>` : x.getting ? ` · <span class="getting ${x.getting}">${GETTING[x.getting] || "getting it"}</span>` : ""}</div></div>
       <button class="icon sm" onclick="event.stopPropagation(); findMenu(${esc(JSON.stringify(x.artist))}, ${esc(JSON.stringify(x.title))}, ${!!(x.owned || x.getting === "done")})" aria-label="More for this song" title="Like, add to a playlist, find">${icon("more", 18)}</button></div>`;
 }
 function renderMarks() {                     // a tick on the seek bar for every song in the mix (hover for its name, click to jump)

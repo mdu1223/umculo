@@ -46,8 +46,8 @@ def find_view(f):
         if clean != a:                     # found before 2.9.5: "4..Artist" -> "Artist", and look again
             a, owned = clean, core.links.owned(clean, t.get("title", "")) or ""
         g = got.get(core.song_key(a, t.get("title", ""))) or got.get("t:" + core.links.title_key(t.get("title", ""))) or "" if got else ""
-        tracks.append({"t": t.get("t"), "artist": a, "title": t.get("title", ""), "owned": owned, "getting": g})
-    tracks.sort(key=lambda t: (t["t"] is None, t["t"] or 0))
+        tracks.append({"t": t.get("t"), "about": t.get("about"), "artist": a, "title": t.get("title", ""), "owned": owned, "getting": g})
+    tracks.sort(key=lambda t: (t["t"] is None and t["about"] is None, t["t"] if t["t"] is not None else t["about"] or 0))
     return {"state": f["state"], "progress": f.get("progress", 0), "message": f.get("message", ""), "find": f["id"],
             "tracks": tracks, "file": bool(f.get("file")), "get": bool(f.get("get")),
             "getting": sum(1 for t in tracks if t["getting"] in ("pending", "searching", "downloading", "filing", "scanning"))}

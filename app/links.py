@@ -1073,6 +1073,23 @@ def unnumber(job):
     return len(nums)
 
 
+def name_fallback(f, tracks):
+    """Songs the tracklist asked for under the DJ's naming ("!Sooks X Dwson - BTH") that your sources didn't find:
+    ask again under the recognised name ("Sooks & Dwson - Before The Hunt"). Songs heard twice that weren't asked for
+    while listening (not on the tracklist) go now too."""
+    got = get_states(f)
+    want = []
+    for t in tracks:
+        if t.get("from") == "both" and t.get("listed_as"):
+            la, lt = t["listed_as"].split(" - ", 1)
+            if got.get(core.song_key(clean_artist(la), lt)) in ("not_found", "failed", "missing"):
+                want.append(t)
+        elif t.get("from") == "heard" and (t.get("hits") or 0) >= 2:
+            want.append(t)
+    if want:
+        want_songs(f, want)
+
+
 def get_states(f):
     """song key -> where getting it has got to (searching, downloading, done, missing)."""
     job = core.JOBS.get(f.get("get_job") or "")
@@ -1269,8 +1286,15 @@ def run_find(f):
                     elif wav:
                         state["empty"] += 1
                     say(bool(hit))
-                if hit and f.get("get"):
-                    want_songs(f, [{"t": off, "artist": hit[0], "title": hit[1]}])   # off to your sources straight away
+                if hit and f.get("get"):                   # off to your sources straight away, unless...
+                    song = {"t": off, "artist": hit[0], "title": hit[1]}
+                    if any(same_song(song, x) for x in listed):
+                        pass                             # ...the tracklist asked for it already (see name_fallback)
+                    elif len(listed) >= 4 and sum(1 for h in list(heard) if same_song(h, song)
+                                                  or core.song_key(h["artist"], h["title"]) == core.song_key(*hit)) < 2:
+                        pass                             # ...it's not on a published tracklist: wait to hear it twice
+                    else:
+                        want_songs(f, [song])
 
             if listed and f.get("get"):
                 want_songs(f, listed)
@@ -1297,17 +1321,20 @@ def run_find(f):
         rec = None
         if f.get("cancel"):
             raise Stopped()
-        tracks = merge_tracks(listed, heard)
+        tracks = merge_tracks(listed, heard, f.get("duration") or 0)
+        if f.get("get"):
+            name_fallback(f, tracks)
         replaced = [o for o in (FINDS.get(x) for x in f.get("replaces") or []) if o]
         if replaced:                                 # finding again: keep what the earlier run found that this one didn't hear
-            seen = {core.song_key(clean_artist(t["artist"]), t["title"]) for t in tracks}
             for o in replaced:
                 for t in o.get("tracks") or []:
-                    k = core.song_key(clean_artist(t.get("artist", "")), t.get("title", ""))
-                    if k not in seen:
-                        seen.add(k)
+                    t = {**t, "artist": clean_artist(t.get("artist", ""))}
+                    if t.get("from") == "heard" and (t.get("hits") or 0) < 2 and listed:
+                        continue                     # heard once, not on the tracklist: most likely misheard
+                    if not any(core.song_key(x["artist"], x["title"]) == core.song_key(t["artist"], t.get("title", ""))
+                               or same_song(x, t) for x in tracks):
                         tracks.append({**t, "from": t.get("from") or "earlier"})
-            tracks.sort(key=lambda t: (t.get("t") is None, t.get("t") or 0))
+            tracks = tidy(tracks, f.get("duration") or 0)
         fset(f, message="Checking your library")
         for t in tracks:
             t["owned"] = owned(t["artist"], t["title"])
@@ -1356,31 +1383,113 @@ def title_key(title):
     return f"{' '.join(t['core_tokens'])}|{' '.join(sorted(t['version_tokens']))}"
 
 
-def merge_tracks(listed, heard):
-    out, by_key = [], {}
+FEAT_RE = re.compile(r"\s*[(\[]?\b(?:feat\.?|ft\.?|featuring)\s+[^)\]]*[)\]]?", re.I)
+VERSION_WORDS = {"revision", "remix", "mix", "edit", "dub", "rework", "version", "vip", "refix", "reprise", "extended", "radio",
+                 "original", "instrumental", "vocal", "club", "print", "remaster", "remastered", "re", "touch", "main", "full"}
+ARTIST_FILLER = {"and", "x", "feat", "ft", "featuring", "the", "dj", "vs", "with", "presents", "pres"}
+
+
+def _plain(s):
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "")
+    return "".join(c for c in s if not unicodedata.combining(c)).lower()
+
+
+def _artist_words(artist, title=""):
+    feats = " ".join(m.group(0) for m in FEAT_RE.finditer(title or ""))      # "ft WAPO Jije" in the title counts too
+    return {w for w in re.findall(r"[a-z0-9]+", _plain(f"{artist} {feats}")) if len(w) >= 3 and w not in ARTIST_FILLER}
+
+
+def _title_core(title):
+    """The song's own name (no features, no brackets, nothing after ' - '): its words, and the version words apart."""
+    t = FEAT_RE.sub(" ", title or "")
+    extra = " ".join(re.findall(r"[(\[]([^)\]]*)[)\]]", t))
+    t = re.sub(r"[(\[][^)\]]*[)\]]", " ", t)
+    if " - " in t:
+        t, more = t.split(" - ", 1)
+        extra += " " + more
+    return [w for w in re.findall(r"[a-z0-9]+", _plain(t))], [w for w in re.findall(r"[a-z0-9]+", _plain(extra))]
+
+
+def same_song(a, b):
+    """The same song under two namings: the DJ's tracklist ("!Sooks X Dwson - BTH", "Memories Revision ft WAPO Jije")
+    and the recognised one ("Sooks & Dwson - Before The Hunt", "RoneeDeep & WAPO Jije - Memories")."""
+    aa, ab = _artist_words(a.get("artist"), a.get("title")), _artist_words(b.get("artist"), b.get("title"))
+    if aa and ab and not (aa & ab) and not any(x in y or y in x for x in aa for y in ab if min(len(x), len(y)) >= 5):
+        return False                                 # nobody in common
+    (ca, xa), (cb, xb) = _title_core(a.get("title")), _title_core(b.get("title"))
+    if not ca or not cb:
+        return False
+    va, vb = {w for w in xa if w not in VERSION_WORDS}, {w for w in xb if w not in VERSION_WORDS}
+    if va and vb and not (va & vb):                  # two different remixes
+        return False
+    if ca == cb:
+        return True
+    for short, long_, raw in ((ca, cb, a.get("title") or ""), (cb, ca, b.get("title") or "")):
+        word = re.sub(r"[^A-Za-z]", "", FEAT_RE.sub("", raw).split("(")[0])
+        if len(short) == 1 and 2 <= len(word) <= 5 and word.isupper() and word.lower() == "".join(w[0] for w in long_):
+            return True                              # "BTH" = "Before The Hunt"
+        if set(short) < set(long_) and (len(short) >= 2 or len(short[0]) >= 4) and \
+                all(w in VERSION_WORDS for w in set(long_) - set(short)):
+            return True                              # "Memories Revision" = "Memories"
+    return False
+
+
+def merge_tracks(listed, heard, duration=0):
+    out = []
     for t in heard:
-        k = core.song_key(t["artist"], t["title"])
-        same = by_key.get(k) or next((o for o in out if title_key(o["title"]) == title_key(t["title"])
-                                      and len(title_key(t["title"])) > 6), None)
+        same = next((o for o in out if core.song_key(o["artist"], o["title"]) == core.song_key(t["artist"], t["title"])
+                     or same_song(o, t) or (title_key(o["title"]) == title_key(t["title"]) and len(title_key(t["title"])) > 6)), None)
         if same:
             same["hits"] += 1
             continue
-        item = {"t": t["t"], "artist": t["artist"], "title": t["title"], "from": "heard", "hits": 1}
-        by_key[k] = item
-        out.append(item)
-    for t in listed:
-        k = core.song_key(t["artist"], t["title"])
+        out.append({"t": t["t"], "artist": t["artist"], "title": t["title"], "from": "heard", "hits": 1})
+    for n, t in enumerate(listed):
         tgt = core.make_target(t["artist"], t["title"])
-        same = by_key.get(k) or next((o for o in out if core.match(f"{o['artist']} {o['title']}", tgt)[0]
-                                      or (title_key(o["title"]) == title_key(t["title"]) and len(title_key(t["title"])) > 6)), None)
-        if same:
-            same["from"] = "both"
-            same["artist"], same["title"] = t["artist"], t["title"]       # the DJ's own naming is usually best
+        same = next((o for o in out if o["from"] == "heard" and (core.match(f"{o['artist']} {o['title']}", tgt)[0] or same_song(o, t)
+                     or (title_key(o["title"]) == title_key(t["title"]) and len(title_key(t["title"])) > 6))), None)
+        if same:                                     # heard and listed: the recognised name (the catalogue's) finds it best
+            same.update(**{"from": "both", "n": n})
+            if core.song_key(t["artist"], t["title"]) != core.song_key(same["artist"], same["title"]):
+                same["listed_as"] = f"{t['artist']} - {t['title']}"
             continue
-        item = {"t": t["t"], "artist": t["artist"], "title": t["title"], "from": "tracklist", "hits": 0}
-        by_key[k] = item
-        out.append(item)
-    out.sort(key=lambda x: (x["t"] is None, x["t"] or 0))
+        if any(o["from"] == "tracklist" and same_song(o, t) for o in out):
+            continue                                 # listed twice
+        out.append({"t": t["t"], "artist": t["artist"], "title": t["title"], "from": "tracklist", "hits": 0, "n": n})
+    return tidy(out, duration)
+
+
+def tidy(tracks, duration=0):
+    """A mix's songs, cleaned up: a tracklist line that's a song already heard (under another naming) goes;
+    with a published tracklist, a song heard only once that isn't on it was most likely misheard (goes);
+    a tracklist song with no time is put where it falls between the songs around it."""
+    out = [dict(t) for t in tracks]
+    for L in [t for t in out if t.get("from") == "tracklist"]:
+        H = next((h for h in out if h.get("from") in ("heard", "both") and h is not L and same_song(h, L)), None)
+        if H:
+            if H["from"] == "heard":
+                H["from"] = "both"
+                H.setdefault("n", L.get("n"))
+            if core.song_key(L["artist"], L["title"]) != core.song_key(H["artist"], H["title"]):
+                H.setdefault("listed_as", f"{L['artist']} - {L['title']}")
+            if not H.get("owned") and L.get("owned"):
+                H["owned"] = L["owned"]
+            out.remove(L)
+    listed = [t for t in out if t.get("from") in ("tracklist", "both")]
+    if len(listed) >= 4:
+        out = [t for t in out if not (t.get("from") == "heard" and (t.get("hits") or 0) < 2)]
+    anchors = sorted(((t["n"], t["t"]) for t in out if t.get("n") is not None and t.get("t") is not None))
+    loose = sorted((t for t in out if t.get("t") is None and t.get("n") is not None), key=lambda t: t["n"])
+    for t in loose:
+        before = [a for a in anchors if a[0] < t["n"]]
+        after = [a for a in anchors if a[0] > t["n"]]
+        n0, t0 = before[-1] if before else (-1, 0)
+        n1, t1 = after[0] if after else (max([x["n"] for x in loose] + [t["n"]]) + 1, duration or None)
+        if t1 is None or t1 <= t0:
+            continue
+        t["about"] = int(t0 + (t1 - t0) * (t["n"] - n0) / (n1 - n0))
+    out.sort(key=lambda x: (x.get("t") is None and x.get("about") is None,
+                            x["t"] if x.get("t") is not None else (x.get("about") or 0)))
     for i, t in enumerate(out):
         t["i"] = i
     return out
@@ -1569,7 +1678,22 @@ def after_jobs():
 
 
 def _repair():
-    """Fix songs queued from numbered tracklists before 3.3.1."""
+    """Fix songs queued from numbered tracklists before 3.3.1; tidy songs found before 3.9.5 (doubles, misheard)."""
+    tidied = 0
+    for f in list(FINDS.values()):
+        if f.get("state") == "done" and f.get("tidy", 0) < 1:
+            try:
+                before = len(f.get("tracks") or [])
+                f["tracks"] = tidy(f.get("tracks") or [], f.get("duration") or 0)
+                f["tidy"] = 1
+                if before != len(f["tracks"]):
+                    tidied += 1
+                    f["message"] = re.sub(r"^Found [\d,]+ songs?", f"Found {core.plural(len(f['tracks']), 'song')}", f.get("message") or "")
+            except Exception as ex:  # noqa: BLE001
+                log("song finder tidy:", f.get("title"), ex)
+    if tidied:
+        save_finds()
+        log(f"song finder: tidied the songs of {core.plural(tidied, 'mix')}")
     for f in list(FINDS.values()):
         ts = f.get("tracks") or []
         if sum(1 for t in ts if re.match(r"^\d{1,3}\s+\S", t.get("artist", ""))) >= 3:

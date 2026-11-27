@@ -14,6 +14,7 @@ run() {  # name, port, command...
 python3 test/page_check.py || FAIL=1
 if python3 test/unit_same_recording.py >/dev/null 2>&1; then echo "PASS same-recording"; else echo "FAIL same-recording"; FAIL=1; fi
 if python3 test/unit_versions_fix.py >/dev/null 2>&1; then echo "PASS versions-fix"; else echo "FAIL versions-fix"; python3 test/unit_versions_fix.py; FAIL=1; fi
+if python3 test/unit_song_merge.py >/dev/null 2>&1; then echo "PASS song-merge"; else echo "FAIL song-merge"; python3 test/unit_song_merge.py; FAIL=1; fi
 run api      8098 python3 test/v20_api.py 8098 mdu ndpass
 run family   8099 python3 test/v20_family.py 8099
 run api21    8100 python3 test/v21_api.py 8100 mdu ndpass
