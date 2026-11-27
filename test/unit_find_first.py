@@ -39,7 +39,7 @@ def ask(f, rnd, name):
 ts = [threading.Thread(target=ask, args=a) for a in ((bg_refine, 2, "refine"), (bg_first, 0, "first"), (playing, 3, "playing"),
                                                       (bg_refine, 2, "refine2"))]
 for t in ts: t.start(); time.sleep(0.05)
-G.release(); G.release()                           # Shazam free again
+for _ in range(G.SLOTS): G.release()              # Shazam free again
 for t in ts: t.join(10)
 check(order[:2] == ["playing", "first"] and set(order[2:]) == {"refine", "refine2"}, f"the mix you're playing, then first passes {order}")
 peak = []

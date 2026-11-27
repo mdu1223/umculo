@@ -1162,9 +1162,11 @@ class Pacer:
             time.sleep(min(w, 2))
 
     def limited(self):
+        """Turned away: wait longer each time (10 s, 20 s, 40 s, 80 s, then 2 min). Asking every 20 s while Shazam
+        holds a longer pause on the server only kept that pause going (1-2 bits a minute after hours of four mixes)."""
         with self.lock:
             self.strikes += 1
-            self.until = max(self.until, time.time() + min(20, 4 * self.strikes))
+            self.until = max(self.until, time.time() + min(120, 5 * 2 ** min(self.strikes, 5)))
 
     def ok(self):
         with self.lock:
@@ -1179,7 +1181,7 @@ class Gate:
     the mix you're playing, then every mix's first pass (one bit every few minutes), then the rest.
     Before 3.9.10 each mix's listeners queued on their own: when Shazam's pause ended they all asked at once,
     were all turned away, and the pause grew; with several mixes at once almost nothing got through."""
-    SLOTS = 2
+    SLOTS = 1                                        # two at once were turned away together
 
     def __init__(self):
         self.cv, self.busy, self.waiting, self.seq = threading.Condition(), 0, [], itertools.count()
