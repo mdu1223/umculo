@@ -1174,11 +1174,41 @@ PACER = Pacer()
 SHAZAM_SLOTS = threading.BoundedSemaphore(4)
 
 
-def run_find(f):
+def watched(f):
+    """Someone is playing this mix now (the player asks about it every few seconds)."""
+    return time.time() - f.get("watched", 0) < 30
+
+
+def watch(f):
+    """The player is on this mix: its songs come first. Waiting its turn behind other mixes, it starts now."""
+    f["watched"] = time.time()
+    with LOCK:
+        start = f.get("state") == "queued" and not f.get("listening_started") and not f.get("cancel")
+        if start:
+            f["listening_started"] = True
+    if start:
+        log("song finder: you're playing", f.get("title"), "- listening to it first")
+        threading.Thread(target=run_find, args=(f, True), daemon=True).start()
+
+
+def make_way(f):
+    """Another mix is being played and listened to: this one (in the background) leaves it most of Shazam's pace."""
+    if watched(f):
+        return
+    with LOCK:
+        busy = any(x is not f and x.get("state") == "listening" and watched(x) for x in FINDS.values())
+    if busy:
+        time.sleep(8)
+
+
+def run_find(f, started=False):
     e, show = f["entry"], f["show_data"]
     if f.get("cancel"):
         return
-    f["listening_started"] = True
+    with LOCK:
+        if f.get("listening_started") and not started:
+            return                                   # already going (started first, as the mix you're playing)
+        f["listening_started"] = True
     req = make_req(f)
     RUNNING_REQ[f["id"]] = req
     path = ""
@@ -1252,6 +1282,7 @@ def run_find(f):
                     for _attempt in range(60):           # Shazam allows a burst, then a few a minute: wait our turn
                         if f.get("cancel"):
                             return
+                        make_way(f)
                         PACER.wait(f)
                         try:
                             with SHAZAM_SLOTS:
@@ -1665,6 +1696,7 @@ def init(umculo):
     for f in core._load_json("finder.json", []):
         if f["state"] not in ("done", "failed"):
             f["state"], f["message"] = "queued", "Resumed after restart"
+            f.pop("listening_started", None)         # it starts over (first, if you're playing it)
         FINDS[f["id"]] = f
     threading.Thread(target=sub_loop, daemon=True).start()
 

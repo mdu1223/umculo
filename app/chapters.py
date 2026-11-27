@@ -28,6 +28,7 @@ def view(r):
     if not f:
         return {"state": "none", "tracks": [], "message": "", "progress": 0,
                 "can_find": core.links.recognition_available()}
+    core.links.watch(f)                         # the player is on it: it goes first
     out = find_view(f)
     with core.links.LOCK:                          # listening to it again: the earlier songs show until that's done
         again = next((x for x in core.links.FINDS.values() if x.get("file") == r["path"] and x is not f and core.users.mine(x)
@@ -102,6 +103,7 @@ def handle_get(path, _qs):
             f = core.links.FINDS.get(m.group(1))
         if not f or not core.users.mine(f):
             raise LookupError("Song finder not found")
+        core.links.watch(f)                    # the player is on it: it goes first
         return find_view(f)
     m = re.match(r"^/api/chapters/([\w-]{1,40})$", path)
     if not m:
