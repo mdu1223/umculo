@@ -1750,11 +1750,13 @@ function contFix(mixes) {
     const c = ch[x.it.mix_url] || ""; return {...x, it: {...x.it, artist: c, album: x.it.album && !SITE_NAMES.test(x.it.album) ? x.it.album : c}}; });
   if (changed) store.set("umc_cont", l);
 }
+/* a mix from your library has its own cover (saved before 3.9.7: its album's, which a channel's mixes share) */
+const contCover = x => x.it.nd_id && x.d >= 1200 ? cover(x.it.nd_id) : x.it.cover_big || x.it.cover || "";
 function contHTML() {
   const l = store.get("umc_cont", []); if (!l.length) return "";
   return `<div class="mx-row"><div class="mx-rowh"><b>Pick up where you left off</b><span class="muted">Mixes and episodes you didn't finish</span></div>
     <div class="shelf-wrap"><div class="shelf mx-shelf">${l.map((x, i) => `<div class="mxc" role="button" tabindex="0" onclick="contPlay(${i})">
-      <div class="mxc-th">${x.it.cover_big || x.it.cover ? `<img loading="lazy" src="${esc(x.it.cover_big || x.it.cover)}" alt="">` : ""}<span class="mxc-dur">${hms(Math.round(x.d - x.t))} left</span>
+      <div class="mxc-th">${contCover(x) ? `<img loading="lazy" src="${esc(contCover(x))}" alt="">` : ""}<span class="mxc-dur">${hms(Math.round(x.d - x.t))} left</span>
         <button class="mxc-play" onclick="event.stopPropagation(); contPlay(${i})" aria-label="Carry on">${PP_PLAY.replace(/24/g, "22")}</button>
         <span class="mxc-prog"><i style="width:${Math.min(100, x.t * 100 / x.d)}%"></i></span></div>
       <div class="mxc-t">${esc(x.it.title)}</div><div class="mxc-s">${esc(x.it.artist || "")}</div></div>`).join("")}</div></div></div>`;

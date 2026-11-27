@@ -168,11 +168,27 @@ def put_ann(d, a):
     return d
 
 
+OWN_COVER = 20 * 60      # a mix: its own cover (a channel's mixes share an album, but each has its own picture)
+
+
+def song_picture(path):
+    """A song's own picture: in the file, or an image saved next to it (same name)."""
+    data = embedded(path)
+    if data:
+        return data
+    stem = os.path.splitext(path)[0]
+    for ext, ctype in ((".jpg", "image/jpeg"), (".jpeg", "image/jpeg"), (".webp", "image/webp"), (".png", "image/png")):
+        if os.path.isfile(stem + ext):
+            with open(stem + ext, "rb") as fh:
+                return fh.read(), ctype
+    return None
+
+
 def song(r, a=None):
     suffix = r["suffix"] or ""
     d = {"id": r["id"], "parent": r["album_id"], "isDir": False, "title": r["title"], "album": r["album"],
          "artist": r["artist"], "track": r["track"] or None, "year": r["year"] or None, "genre": r["genre"] or None,
-         "coverArt": r["album_id"], "size": r["size"], "contentType": CTYPE.get(suffix, "audio/" + suffix),
+         "coverArt": r["id"] if (r["duration"] or 0) >= OWN_COVER else r["album_id"], "size": r["size"], "contentType": CTYPE.get(suffix, "audio/" + suffix),
          "suffix": suffix, "duration": int(r["duration"] or 0), "bitRate": r["bitrate"], "path": r["rel"],
          "discNumber": r["disc"] or None, "created": iso(r["created"]), "albumId": r["album_id"],
          "artistId": r["artist_id"], "type": "music", "mediaType": "song", "isVideo": False,
@@ -1149,8 +1165,12 @@ def cover_bytes(cid):
     """-> (bytes, content type) for a song, album, artist or playlist id."""
     r = db.q("SELECT * FROM album WHERE id=?", (cid,), one=True)
     if not r:
-        s = db.q("SELECT album_id FROM song WHERE id=?", (cid,), one=True)
+        s = db.q("SELECT album_id, path, duration FROM song WHERE id=?", (cid,), one=True)
         if s:
+            if (s["duration"] or 0) >= OWN_COVER:     # a mix: its own picture first
+                own = song_picture(s["path"])
+                if own:
+                    return own
             r = db.q("SELECT * FROM album WHERE id=?", (s["album_id"],), one=True)
     if not r:
         pl = db.q("SELECT song.album_id FROM plsong JOIN song ON song.id = plsong.song WHERE pid=? ORDER BY pos LIMIT 1", (cid,), one=True)
